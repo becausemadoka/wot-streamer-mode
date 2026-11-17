@@ -1,0 +1,45 @@
+{
+  "_comment": "Streamer Mode for World of Tanks 2.4.1 -- copy this file to <game>/mods/configs/akemi.streamermode/config.json",
+
+  "enable": true,
+
+  "_mode_comment": "'label' = replace the nickname with e.g. Player_001 (recommended); 'blank' = show nothing at all",
+  "mode": "label",
+
+  "_namePrefix_comment": "Prefix used in 'label' mode; a 3-digit counter is appended. Leave EMPTY to follow the client language automatically (玩家_ on a Chinese client, Player_ elsewhere). Any value here overrides that.",
+  "namePrefix": "",
+
+  "_bot_comment": "Official bots (the client shows them as ':Name Surname:'). They get their own prefix and their own counter, e.g. Bot_001. Use 机器人_ for a Chinese prefix.",
+  "botMode": "botLabel",
+  "botPrefix": "Bot_",
+  "hideBotClanTag": true,
+
+  "_exclude_comment": "Who keeps their real name. All default to true.",
+  "exclude.ownName": true,
+  "exclude.friendName": true,
+  "exclude.clanmateName": true,
+  "exclude.divmateName": true,
+
+  "_hideClanTag_comment": "Also hide the clan tag shown next to a stranger's name",
+  "hideClanTag": true,
+
+  "_hideResultsClanTag_comment": "The post-battle results screen reads the clan tag straight from the player record, so it needs its own switch",
+  "hideResultsClanTag": true,
+
+  "_badges_comment": "Badges/medals drawn next to nicknames. A rare medal identifies a player about as well as the name does, so hiding is the default.",
+  "hideBadges": true,
+  "hideBotBadges": true,
+  "badges.exemptKnown": true,
+
+  "_profile_comment": "When you open ONE player's details/profile, show their real name instead of the label. Set to false to keep that window masked too.",
+  "showRealNamesInProfile": true,
+
+  "_scope_comment": "Which screens are anonymised. All default to true.",
+  "scope.inBattle": true,
+  "scope.battleResults": true,
+  "scope.playersPanel": true,
+  "scope.minimap": true,
+  "scope.messages": true,
+  "scope.markers": true,
+  "scope.postmortem": true
+}

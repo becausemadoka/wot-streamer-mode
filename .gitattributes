@@ -1,0 +1,10 @@
+# Everything here is source, docs and tests: normalise to LF in the repo so
+# diffs are clean across Windows/Linux.  Working copies keep whatever the
+# editor writes.
+* text=auto eol=lf
+
+# .wotmod files are ZIP archives.  If one is ever added (e.g. a pinned release),
+# keep the bytes untouched or the game loader will reject it.
+*.wotmod binary
+*.pkg binary
+*.pyc binary
