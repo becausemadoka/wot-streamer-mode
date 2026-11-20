@@ -34,10 +34,11 @@
   "_profile_comment": "When you open ONE player's details/profile, show their real name instead of the label. Set to false to keep that window masked too.",
   "showRealNamesInProfile": true,
 
-  "_scope_comment": "Which screens are anonymised. All default to true.",
+  "_scope_comment": "Which screens are anonymised. All default to true. scope.playersPanel covers the side panels and the loading-screen team lists -- they share one switch because the loading rows are reused in battle, so splitting them left the panel half-masked. scope.tabPanel covers the full-screen TAB scoreboard.",
   "scope.inBattle": true,
   "scope.battleResults": true,
   "scope.playersPanel": true,
+  "scope.tabPanel": true,
   "scope.minimap": true,
   "scope.messages": true,
   "scope.markers": true,

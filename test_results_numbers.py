@@ -239,6 +239,12 @@ print('=== the next battle resets the numbering ===')
 mod.ANONYMISER.reset()
 panel2 = [panelLabel(vid, name) for name, vid in BOTS]
 mod.onAvatarBecomePlayer()
+# onAvatarBecomePlayer() drops the identity snapshot before re-resolving it
+# (a real client is read back; here there is no client, so restore the stubs).
+mod.IDENTITY.ownDBID = 1
+mod.IDENTITY.friendDBIDs = set()
+mod.IDENTITY.ownClanAbbrev = 'CLAN'
+mod.IDENTITY.squadmateDBIDs = set()
 panel3 = [panelLabel(vid, name) for name, vid in BOTS]
 check('new battle starts from Bot_001 again',
       panel3[0] == 'Bot_001', (panel2, panel3))

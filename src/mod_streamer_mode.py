@@ -29,6 +29,7 @@ failure cannot corrupt the client, and un-hooking restores everything exactly.
 """
 
 import os
+import sys
 import traceback
 
 import BigWorld
@@ -82,10 +83,71 @@ KEY_SHOW_REAL_IN_PROFILE = 'showRealNamesInProfile'
 KEY_SCOPE_BATTLE = 'scope.inBattle'
 KEY_SCOPE_RESULTS = 'scope.battleResults'
 KEY_SCOPE_PANEL = 'scope.playersPanel'
+KEY_SCOPE_TAB = 'scope.tabPanel'
 KEY_SCOPE_MINIMAP = 'scope.minimap'
 KEY_SCOPE_MESSAGES = 'scope.messages'
 KEY_SCOPE_MARKERS = 'scope.markers'
 KEY_SCOPE_POSTMORTEM = 'scope.postmortem'
+
+# ---------------------------------------------------------------------------
+# surface context
+#
+# The five per-screen switches only work if the SHARED helpers know which screen
+# is asking for a name.  The client builds every battle label through a handful
+# of shared functions (PlayerFullNameFormatter.format, PlayerInfoVO.
+# getPlayerLabel, VehicleArenaInfoVO.getDisplayedName), and all five surfaces
+# occupy them from inside their own entry points:
+#
+#   players panel  VehicleInfoComponent.addVehicleInfo
+#   minimap        ArenaVehiclesPlugin.addVehicleInfo / _setVehicleInfo
+#   markers        VehicleMarkerPlugin._setVehicleInfo
+#   messages       VehicleMessages._getPlayerInfo
+#   postmortem     PostmortemPanel._makeKillerVO / __setPlayerInfo
+#
+# So each entry point pushes its key here for the duration of the call, and the
+# shared helpers consult the top of the stack.  Everything in those entry points
+# is synchronous -- the name is resolved, composed and handed to the engine
+# before the method returns -- so a plain stack is enough; no thread or task
+# state has to be carried.
+#
+# An EMPTY stack means "not inside a surface entry point": shared helpers then
+# fall back to scope.inBattle, preserving the previous behaviour for call sites
+# that were not wrapped.
+# ---------------------------------------------------------------------------
+
+_SURFACE_STACK = []
+
+
+class _Surface(object):
+    """Context manager: mark which battle surface is currently building a name.
+
+    try/finally in __exit__ guarantees the stack is unwound even when the client
+    raises inside the wrapped method, so one bad frame cannot leave every later
+    name permanently masked (or permanently visible).
+    """
+
+    __slots__ = ('key',)
+
+    def __init__(self, key):
+        self.key = key
+
+    def __enter__(self):
+        _SURFACE_STACK.append(self.key)
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        try:
+            if _SURFACE_STACK and _SURFACE_STACK[-1] == self.key:
+                _SURFACE_STACK.pop()
+            elif self.key in _SURFACE_STACK:
+                # out-of-order unwind: remove the last matching entry
+                for index in range(len(_SURFACE_STACK) - 1, -1, -1):
+                    if _SURFACE_STACK[index] == self.key:
+                        del _SURFACE_STACK[index]
+                        break
+        except Exception:
+            pass
+        return False
 
 DEFAULT_PREFIX = 'Player_'
 DEFAULT_BOT_PREFIX = 'Bot_'
@@ -141,6 +203,7 @@ DEFAULTS = {
     KEY_SCOPE_BATTLE: True,
     KEY_SCOPE_RESULTS: True,
     KEY_SCOPE_PANEL: True,
+    KEY_SCOPE_TAB: True,
     KEY_SCOPE_MINIMAP: True,
     KEY_SCOPE_MESSAGES: True,
     KEY_SCOPE_MARKERS: True,
@@ -288,50 +351,84 @@ class Config(object):
     def _configPath():
         """Locate mods/configs/<MOD_NAME>/config.json.
 
-        Tries several candidate roots, because a mod can be loaded either
-        unpacked under res_mods/<ver>/scripts/... or mounted from a .wotmod
-        (where __file__ is a virtual path and not on disk).
+        The path is NOT derived from __file__ any more.  Inside a .wotmod,
+        __file__ is a virtual archive path like
+            <root>/mods/<ver>/akemi.streamermode.wotmod/res/scripts/client/gui/mods/...
+        and the old code split it on the FIRST 'mods' component, which is the
+        package folder, then appended 'mods/configs/...' again -- producing
+            <root>/scripts/client/gui/mods/configs/...        (observed in game.log)
+        so a config file at the documented place was never read.
+
+        The game root comes from BigWorld / sys.path instead, which is accurate,
+        and every candidate is checked against disk.
         """
+        rel = os.path.join('mods', 'configs', MOD_NAME, 'config.json')
         candidates = []
+
+        # 1. Roots the engine exposes.
+        roots = []
+        for attr in ('getClientRoot', 'getWatchdogRoot'):
+            try:
+                fn = getattr(BigWorld, attr, None)
+                if callable(fn):
+                    value = fn()
+                    if value:
+                        roots.append(str(value))
+            except Exception:
+                pass
+
+        # 2. sys.path often contains the client root (<root>/res/scripts/client).
         try:
-            here = os.path.dirname(os.path.abspath(__file__)).replace('\\', '/')
-            parts = here.split('/')
-            # .../<root>/res_mods/<ver>/scripts/client/gui/mods
-            for anchor in ('res_mods', 'mods'):
-                if anchor in parts:
-                    root = '/'.join(parts[:parts.index(anchor)])
-                    candidates.append(os.path.join(
-                        root, 'mods', 'configs', MOD_NAME, 'config.json'))
+            for entry in list(sys.path):
+                if not entry:
+                    continue
+                norm = entry.replace('\\', '/')
+                for suffix in ('/res/scripts/client', '\\res\\scripts\\client',
+                               '/res/scripts', '/res'):
+                    if norm.lower().endswith(suffix.lower()):
+                        roots.append(norm[:len(norm) - len(suffix)])
+                        break
         except Exception:
             pass
 
-        # Fall back to the game root that BigWorld knows about.
+        # 3. __file__, but resolved by the package layout instead of a naive
+        #    split: walk up until a directory that actually exists is reached.
         try:
-            root = None
-            for attr in ('getClientRoot', 'getWatchdogRoot'):
-                fn = getattr(BigWorld, attr, None)
-                if callable(fn):
-                    root = fn()
-                    if root:
-                        break
-            if root:
-                candidates.append(os.path.join(str(root), 'mods', 'configs',
-                                               MOD_NAME, 'config.json'))
+            here = os.path.dirname(os.path.abspath(__file__))
+            walked = here
+            for _ in range(12):
+                walked = os.path.dirname(walked)
+                if not walked or walked == os.path.dirname(walked):
+                    break
+                if os.path.isdir(os.path.join(walked, 'mods')):
+                    roots.append(walked)
+                    break
         except Exception:
             pass
+
+        seen = set()
+        for root in roots:
+            path = os.path.join(root, rel)
+            key = path.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(path)
 
         for path in candidates:
             try:
-                if path and os.path.isfile(path):
+                if os.path.isfile(path):
                     return path
             except Exception:
                 continue
-        # Nothing found: return the first guess so the log message is useful.
+        # Nothing found: return the best guess so both the log line and the
+        # "write a default config" path point somewhere sensible.
         return candidates[0] if candidates else None
 
     def _load(self):
         if not self._path or not os.path.isfile(self._path):
             logInfo('no config at %r; using defaults (anonymising)' % (self._path,))
+            self._writeDefaults()
             return
         try:
             import json
@@ -347,6 +444,32 @@ class Config(object):
             logError('config unreadable, keeping anonymising defaults: %s'
                      % traceback.format_exc())
 
+    def _writeDefaults(self):
+        """Materialise a default config so the file exists to be edited.
+
+        Without this the documented <game>/mods/configs/<mod>/config.json simply
+        was not there, so a user had to guess both the path and every key before
+        they could turn on a debug option.  Best effort only: a read-only or
+        missing parent must never stop the mod from running, and never changes
+        what is loaded -- defaults stay in memory either way.
+        """
+        if not self._path:
+            return
+        try:
+            import json
+            folder = os.path.dirname(self._path)
+            if folder and not os.path.isdir(folder):
+                os.makedirs(folder)
+            if os.path.isfile(self._path):
+                return
+            payload = json.dumps(dict(DEFAULTS), indent=2, sort_keys=True)
+            with open(self._path, 'wb') as fh:
+                fh.write(payload.encode('utf-8') + b'\n')
+            logInfo('wrote default config to %s' % self._path)
+        except Exception:
+            logError('could not write default config to %r: %s'
+                     % (self._path, traceback.format_exc()))
+
     def flag(self, key):
         return bool(self._values.get(key, True))
 
@@ -356,6 +479,30 @@ class Config(object):
     def scope(self, key):
         """True when the given UI scope should be anonymised."""
         return self.enabled() and self.flag(key)
+
+    def surface(self, key):
+        """True when one *specific* battle surface may be anonymised.
+
+        The five per-screen switches are narrower than scope.inBattle: a surface
+        is only masked when the mod is on, the battle scope is on, AND its own
+        switch is on.  scope.inBattle therefore stays the master gate for the
+        whole battle HUD -- turning it off disables every surface.
+        """
+        return (self.enabled() and self.flag(KEY_SCOPE_BATTLE)
+                and self.flag(key))
+
+    def surfaceAllowed(self):
+        """True when the surface currently asking for a name may be masked.
+
+        The shared helpers (format / getPlayerLabel / getDisplayedName) cannot
+        tell which screen is asking, so the answer comes from the context that
+        the surface wrapper pushed.  Outside any context we fall back to the
+        battle scope, which is the historical behaviour.
+        """
+        surface = _SURFACE_STACK[-1] if _SURFACE_STACK else None
+        if surface is not None:
+            return self.surface(surface)
+        return self.scope(KEY_SCOPE_BATTLE)
 
     def mode(self):
         mode = self._values.get(KEY_MODE, 'label')
@@ -514,11 +661,15 @@ class Identity(object):
     def resolve(self):
         """(Re)gather identity data. Safe to call repeatedly.
 
+        This REPLACES every snapshot rather than merging, and a failed or empty
+        lookup leaves the corresponding set empty.  Merging was a real bug: an
+        empty friend list or an empty platoon was ignored, so the previous
+        account's friends and the previous battle's platoon mates stayed exempt
+        forever.  Empty now means "nobody", which is the safe direction.
+
         Timing matters: in the lobby `BigWorld.player.arena` does not exist yet,
-        so the own DBID is only available once a battle is loading. The client
-        log showed `self=None` for almost every call, which -- because our
-        whitelist fails toward hiding -- anonymised the player's OWN nickname.
-        We therefore retry a few times and refresh whenever a battle starts.
+        so the own DBID is only available once a battle is loading. We therefore
+        refresh at every battle start and at every account boundary.
         """
         self._tries += 1
 
@@ -527,30 +678,30 @@ class Identity(object):
             own = self._readOwnDBID()
         except Exception:
             logError('own DBID lookup failed: %s' % traceback.format_exc())
-        if own:
-            self.ownDBID = own
 
         clan = None
         try:
             clan = self._readOwnClanAbbrev()
         except Exception:
             pass
-        if clan:
-            self.ownClanAbbrev = clan
 
+        friends = set()
         try:
-            friends = self._readFriendDBIDs()
-            if friends:
-                self.friendDBIDs = friends
+            friends = self._readFriendDBIDs() or set()
         except Exception:
             logError('friend lookup failed: %s' % traceback.format_exc())
 
+        mates = set()
         try:
-            mates = self._readSquadmateDBIDs()
-            if mates:
-                self.squadmateDBIDs = mates
+            mates = self._readSquadmateDBIDs() or set()
         except Exception:
             pass
+
+        # Assign unconditionally -- an empty result must clear the old snapshot.
+        self.ownDBID = own or None
+        self.ownClanAbbrev = clan or None
+        self.friendDBIDs = set(friends)
+        self.squadmateDBIDs = set(mates)
 
         self.resolved = True
         logInfo('identity: self=%r clan=%r friends=%d squadmates=%d'
@@ -606,18 +757,36 @@ class Identity(object):
 
     @staticmethod
     def _readOwnClanAbbrev():
-        """Own clan tag, from the clan cache in the lobby."""
+        """Own clan tag, from the clan cache in the lobby.
+
+        The accessor is `g_clanCache.clanAbbrev`.  An earlier version read
+        `g_clanCache.clanAccountInfo.clanAbbrev`, which does not exist on this
+        client, so the clan exemption never worked and clanmates were masked.
+        Each candidate is tried in turn because the cache shape is not part of
+        any stable API.
+        """
         try:
             from gui.clans.clan_cache import g_clanCache
-            account = g_clanCache.clanAccountInfo
-            if account is not None:
-                return getattr(account, 'clanAbbrev', None)
+            for attr in ('clanAbbrev', 'clanInfo'):
+                value = getattr(g_clanCache, attr, None)
+                if isinstance(value, basestring) and value:
+                    return value
+                # some builds expose a small record rather than the string
+                abbrev = getattr(value, 'clanAbbrev', None)
+                if isinstance(abbrev, basestring) and abbrev:
+                    return abbrev
         except Exception:
             pass
         try:
             import Account
             info = getattr(Account.Account, 'playerInfo', None) or {}
-            return info.get('clanAbbrev')
+            for key in ('clanAbbrev', 'clanInfo'):
+                value = info.get(key)
+                if isinstance(value, basestring) and value:
+                    return value
+                abbrev = getattr(value, 'clanAbbrev', None)
+                if isinstance(abbrev, basestring) and abbrev:
+                    return abbrev
         except Exception:
             pass
         return None
@@ -1032,12 +1201,19 @@ class Anonymiser(object):
         Decision mirrors the name rules so the HUD stays consistent: people you
         know keep their badges, strangers and bots lose them.
 
+        The MASTER switch is checked first.  Every badge path funnels through
+        this method, so with `enable: false` no badge is ever touched -- an
+        earlier version only consulted hideBadges(), so the global buildBadge /
+        getSelectedByLayout wrappers kept stripping medals with the mod off.
+
         Any failure returns False, i.e. "leave the badge alone".  That is the
         opposite of the name rule on purpose: a badge is not personal data, so a
         bug here is cosmetic rather than a leak, and quietly blanking every
         medal would be the more annoying failure.
         """
         try:
+            if not CONFIG.enabled():
+                return False
             if not CONFIG.hideBadges():
                 return False
             if playerVO is not None:
@@ -1110,11 +1286,16 @@ class Anonymiser(object):
         """
         if not dbID:
             return True
-        # If we never learned our own DBID the safest reading of "unknown" is
-        # still "hide", but that would hide the player's own name too. Try once
-        # more before giving up: by the time names are being rendered the arena
-        # usually exists.
-        if not IDENTITY.ownDBID:
+        # If we never learned our own DBID, "unknown" would otherwise be read as
+        # "stranger", which masks the player's OWN name.  The arena exists by the
+        # time names are rendered, so retry before giving up -- the game.log
+        # showed `identity: self=None` for the first frames of a battle, during
+        # which the streamer's own row was masked.
+        #
+        # The counter only guards against a retry storm; it is reset by
+        # IDENTITY.reset() at each battle/account boundary, so a long lobby stay
+        # cannot exhaust it before a battle starts.
+        if not IDENTITY.ownDBID and IDENTITY._tries < 8:
             IDENTITY.resolve()
         if CONFIG.flag(KEY_EXCLUDE_SELF) and IDENTITY.ownDBID \
                 and dbID == IDENTITY.ownDBID:
@@ -1130,7 +1311,7 @@ class Anonymiser(object):
 
     def display(self, playerVO, realName):
         """Name to show.  On any internal error we hide rather than leak."""
-        if not CONFIG.scope(KEY_SCOPE_BATTLE):
+        if not CONFIG.surfaceAllowed():
             return realName
         try:
             if _isBot(playerVO):
@@ -1248,6 +1429,8 @@ def _hookPlayerLabel(original):
             realName = original(self)
         except Exception:
             return u''
+        if not CONFIG.surfaceAllowed():
+            return realName
         return ANONYMISER.display(self, realName)
     return getPlayerLabel
 
@@ -1266,6 +1449,8 @@ def _hookPlayerFakeLabel(original):
             return u''
         if _isBot(self):
             return realName
+        if not CONFIG.surfaceAllowed():
+            return realName
         return ANONYMISER.display(self, realName)
     return getPlayerFakeLabel
 
@@ -1279,6 +1464,10 @@ def _hookDisplayedName(original):
     Only the second carries a player name, so when no argument is supplied we
     must pass the call straight through -- anonymising it would replace tank
     names with "Player_001".
+
+    Gating uses surfaceAllowed(), not the battle scope: this is the call the
+    minimap and the 3D markers use to resolve a name, so it must honour their
+    individual switches.
     """
 
     def getDisplayedName(self, name=None):
@@ -1286,7 +1475,7 @@ def _hookDisplayedName(original):
             return original(self, name)          # tank name, not a nickname
         try:
             playerVO = getattr(self, 'player', None)
-            if playerVO is not None and CONFIG.scope(KEY_SCOPE_BATTLE):
+            if playerVO is not None and CONFIG.surfaceAllowed():
                 if _isBot(playerVO):
                     # Key on the player VO's identity, consistent with display()
                     # and format().
@@ -1298,7 +1487,7 @@ def _hookDisplayedName(original):
             return original(self, name)
         except Exception:
             # never raise into the render path; never leak a name either
-            if not CONFIG.scope(KEY_SCOPE_BATTLE):
+            if not CONFIG.surfaceAllowed():
                 try:
                     return original(self, name)
                 except Exception:
@@ -1358,7 +1547,7 @@ def _hookFormat(original):
     """
 
     def format(self, vInfoVO, playerName=None):
-        if not CONFIG.scope(KEY_SCOPE_BATTLE):
+        if not CONFIG.surfaceAllowed():
             return original(self, vInfoVO, playerName)
         try:
             playerVO = getattr(vInfoVO, 'player', None)
@@ -1424,6 +1613,13 @@ def _resultsKeepIdentity(dbID, clanAbbrev=None):
     """
     if not dbID:
         return False
+    # Same retry as isStrangerIdentity(): onAvatarBecomePlayer() resets and then
+    # re-resolves, but the arena does not exist yet at that moment, so ownDBID is
+    # None for the first frames.  The results screen renders later, when the
+    # arena IS available -- without this retry the streamer's own row on the
+    # personal scoreboard was masked as "玩家_001".
+    if not IDENTITY.ownDBID and IDENTITY._tries < 8:
+        IDENTITY.resolve()
     if CONFIG.flag(KEY_EXCLUDE_SELF) and IDENTITY.ownDBID \
             and dbID == IDENTITY.ownDBID:
         return True
@@ -1462,16 +1658,20 @@ def _resultsLabel(playerInfo, realValue, raw):
 
     so hooking only realName() left three routes showing the original text.
     This single helper is used by every one of them.
+
+    NATIVE ANONYMISER.  When the game's own anonymiser is active for a player,
+    __realName and __fakeName differ: the client built a fake name and every
+    accessor returns it.  That value is NOT safe to pass through -- it is still
+    a per-player identifier that links this scoreboard row to a specific person,
+    and the reviewer flagged exactly this early return as a leak.  The exempted
+    groups keep their real data; everybody else is masked on top of the native
+    fake name, the same way as in battle.
     """
     if not CONFIG.scope(KEY_SCOPE_RESULTS):
         return realValue
     try:
-        # The game's own anonymiser already replaced this name: leave it.
         fake = getattr(playerInfo, '_PlayerInfo__fakeName', None)
         real = getattr(playerInfo, '_PlayerInfo__realName', None)
-        if fake and real and fake != real:
-            return realValue
-
         dbID = getattr(playerInfo, '_PlayerInfo__dbID', None)
 
         if _resultsIsBot(playerInfo, dbID):
@@ -1486,17 +1686,24 @@ def _resultsLabel(playerInfo, realValue, raw):
             return ANONYMISER.botDisplay(
                 canonical, key=ANONYMISER.botKey(canonical, None))
 
+        # Checked BEFORE the native-anonymiser case: an exempted player must keep
+        # their real name even if the game anonymised them for everyone else.
         if _resultsKeepIdentity(dbID, _resultsClanAbbrev(playerInfo)):
             return realValue
+
+        # Everything below is a stranger.  Native fake name or not, they get a
+        # label -- the early return that used to sit here was the reported leak.
+        source = raw or real or fake or realValue
         # Remember the true name before masking it, so the profile window can
         # restore it when "show real names in profile" is enabled.
-        ANONYMISER.rememberRealName(dbID, real or raw or realValue)
+        ANONYMISER.rememberRealName(dbID, source)
         if CONFIG.mode() == 'blank':
             return u''
         return ANONYMISER.labelFor(_DBIDKey(dbID))
     except Exception:
+        # Fail closed: never hand back text we could not classify.
         logError('results label failed: %s' % traceback.format_exc())
-        return realValue
+        return u''
 
 
 def _hookResultsRealName(original):
@@ -1586,21 +1793,8 @@ def _hookResultsClanAbbrev(original):
 # ---------------------------------------------------------------------------
 # Badges (medal icons drawn next to the nickname)
 #
-# Every in-battle surface funnels badges through just two helpers:
-#
-#   gui/shared/badges.buildBadge(badgeID, extraData)        -> badge VO or None
-#       used by stats_exchange/vehicle.pyc (players panel),
-#       postmortem_panel.pyc, battle/event/{players_panel,stats}.pyc,
-#       battle_results/reusable/avatars.pyc
-#
-#   gui/doc_loaders/badges_loader.getSelectedByLayout(ids)  -> (prefix, suffix)
-#       used by tab_view.pyc (TAB full stats) and
-#       prebattle_highlights/.../vehicle_markers_sub_presenter.pyc
-#
-# buildBadge already treats None / badgeID==0 as "no badge" (it checks
-# `badgeID != 0` first), and the callers skip rendering when it returns None.
-# Returning (0, 0) likewise means "no prefix, no suffix".  So filtering at these
-# two points covers every place a medal can appear.
+# Leave the global helpers untouched: getSelectedByLayout feeds cached arena
+# VO fields, and buildBadge cannot identify the player or screen.
 # ---------------------------------------------------------------------------
 
 def _badgeHiddenFor(playerVO=None, dbID=None, clanAbbrev=None, isBot=False):
@@ -1616,54 +1810,6 @@ def _badgeHiddenFor(playerVO=None, dbID=None, clanAbbrev=None, isBot=False):
         return False
 
 
-def _hookGetSelectedByLayout(original):
-    """gui.doc_loaders.badges_loader.getSelectedByLayout(badgesIDs).
-
-    Returns (prefixBadgeID, suffixBadgeID).
-
-    CAREFUL: VehicleArenaInfoVO.__init__ calls this at construction time to fill
-    __prefixBadge/__suffixBadge (arena_vos.pyc L488).  The VO does not have its
-    ``player`` attached yet at that point, so this hook cannot decide per player
-    and must NOT blank everything -- that would strip badges for self, friends
-    and clanmates too, ignoring the exemption.
-
-    The per-player decision is therefore made where the player IS known:
-      * in battle  -> the selectedBadge / selectedSuffixBadge property hooks
-      * TAB panel  -> _clearTabBadges() on the Gameface model
-    This hook only acts as the coarse "hide all badges" switch, and only when the
-    exemption for known players is OFF (i.e. the user wants badges gone for
-    everyone).
-    """
-
-    def getSelectedByLayout(badgesIDs):
-        try:
-            if CONFIG.hideBadges() and not CONFIG.badgesExemptKnown():
-                return (0, 0)
-        except Exception:
-            pass
-        return original(badgesIDs)
-    return getSelectedByLayout
-
-
-def _hookBuildBadge(original):
-    """gui.shared.badges.buildBadge(badgeID, extraData).
-
-    Materialises a badge VO.  It receives only the badge id -- no player -- so it
-    cannot apply the per-player exemption and is NOT used to decide anything by
-    itself.  It is kept as a safety net for the blanket case (exemption off),
-    where every badge should disappear regardless of who it belongs to.
-    """
-
-    def buildBadge(badgeID, extraData=None):
-        try:
-            if CONFIG.hideBadges() and not CONFIG.badgesExemptKnown():
-                return None
-        except Exception:
-            pass
-        return original(badgeID, extraData)
-    return buildBadge
-
-
 def _hookResultsSetBadges(original):
     """UserNames._setBadges -- a CLASSMETHOD, so the first argument is `cls`.
 
@@ -1672,10 +1818,11 @@ def _hookResultsSetBadges(original):
     """
 
     def _setBadges(cls, model, reusable, playerDbID):
+        result = original(cls, model, reusable, playerDbID)
         try:
-            dbID = playerDbID
-            if not _badgeHiddenFor(dbID=dbID):
-                return original(cls, model, reusable, playerDbID)
+            if not CONFIG.scope(KEY_SCOPE_RESULTS) or not _badgeHiddenFor(
+                    dbID=playerDbID, isBot=not playerDbID):
+                return result
             for holder in ('badge', 'suffixBadge'):
                 badgeModel = getattr(model, holder, None)
                 setter = getattr(badgeModel, 'setBadgeID', None) if badgeModel else None
@@ -1697,78 +1844,60 @@ def _hookResultsSetBadges(original):
                     setter('')
                 except Exception:
                     pass
-            return None
         except Exception:
             logError('results badge strip failed: %s' % traceback.format_exc())
-            return original(cls, model, reusable, playerDbID)
+        return result
     return _setBadges
 
 
 def _hookSelectedBadge(original):
-    """VehicleArenaInfoVO.selectedBadge (a property).
-
-    THE key chokepoint for in-battle badges.  arena_vos defines it as
-
-        selectedBadge -> self.__prefixBadge
-        selectedSuffixBadge -> self.__suffixBadge
-
-    and every in-battle consumer reads these (stats_exchange/vehicle.pyc for the
-    players panel, postmortem_panel.pyc for the killer line, event panels, the
-    pre-battle markers).  Reporting 0 means "no badge", which is exactly what the
-    client itself uses when a player has none.
-
-    Hooking the property is preferred over patching each consumer because it is
-    one place instead of five, and it carries the player VO -- so the
-    self/friends/clan/squad exemption applies without extra lookups.
-    """
-
+    """Filter prefix or suffix at read time, only for a known battle surface."""
     def selectedBadge(self):
+        result = original(self)
         try:
-            if not CONFIG.scope(KEY_SCOPE_BATTLE):
-                return original(self)
-            playerVO = getattr(self, 'player', None)
-            if _badgeHiddenFor(playerVO=playerVO):
-                return 0
+            if _SURFACE_STACK and CONFIG.surface(_SURFACE_STACK[-1]):
+                playerVO = getattr(self, 'player', None)
+                if playerVO is not None and _badgeHiddenFor(playerVO=playerVO):
+                    return 0
         except Exception:
-            logError('selectedBadge hook failed: %s' % traceback.format_exc())
-        return original(self)
+            logError('selected badge hook failed: %s' % traceback.format_exc())
+        return result
     return selectedBadge
-
-
-def _hookSelectedSuffixBadge(original):
-    """VehicleArenaInfoVO.selectedSuffixBadge (a property) -- see above."""
-
-    def selectedSuffixBadge(self):
-        try:
-            if not CONFIG.scope(KEY_SCOPE_BATTLE):
-                return original(self)
-            playerVO = getattr(self, 'player', None)
-            if _badgeHiddenFor(playerVO=playerVO):
-                return 0
-        except Exception:
-            logError('selectedSuffixBadge hook failed: %s'
-                     % traceback.format_exc())
-        return original(self)
-    return selectedSuffixBadge
 
 
 def _hookPostmortemBadgeFor(original):
     """PostmortemPanel._makeKillerVO -- the death-cam killer line.
 
-    Belt-and-braces alongside the selectedBadge property hook: the badge here is
-    stored on the returned user VO as 'badgeVisualVO'
-    (postmortem_panel.pyc L541-542), so drop it as well.
+    This is also where `scope.postmortem` is enforced.  The method builds its
+    dict from ctx.getPlayerFullNameParts(...), i.e. through the shared format()
+    helper, so running the original inside the postmortem context is what decides
+    whether the name and clan come out masked.
+
+    Verified shape of the returned dict:
+        'userName', 'fakeName', 'clanAbbrev', 'region', 'igrType', 'tags'
+    plus the badge as 'badgeVisualVO'.
     """
 
     def _makeKillerVO(self, vInfoVO):
-        result = original(self, vInfoVO)
-        try:
-            playerVO = getattr(vInfoVO, 'player', None)
-            if _badgeHiddenFor(playerVO=playerVO) and isinstance(result, dict):
-                result.pop('badgeVisualVO', None)
-        except Exception:
-            logError('postmortem badge strip failed: %s' % traceback.format_exc())
-        return result
+        with _Surface(KEY_SCOPE_POSTMORTEM):
+            result = original(self, vInfoVO)
+            try:
+                if not CONFIG.surface(KEY_SCOPE_POSTMORTEM):
+                    return result
+                playerVO = getattr(vInfoVO, 'player', None)
+                if isinstance(result, dict):
+                    if playerVO is not None and _badgeHiddenFor(playerVO=playerVO):
+                        result.pop('badgeVisualVO', None)
+                    # the clan tag is read straight off the VO, not from the
+                    # formatter, so it needs stripping separately
+                    if CONFIG.flag(KEY_HIDE_CLAN_TAG) \
+                            and playerVO is not None \
+                            and ANONYMISER.isStranger(playerVO):
+                        if result.get('clanAbbrev'):
+                            result['clanAbbrev'] = u''
+            except Exception:
+                logError('postmortem strip failed: %s' % traceback.format_exc())
+            return result
     return _makeKillerVO
 
 
@@ -1799,15 +1928,15 @@ def _hookTeamStatsBadge(original):
     """
 
     def setRecord(self, result, reusable):
-        original(self, result, reusable)
+        originalResult = original(self, result, reusable)
         try:
             if not CONFIG.scope(KEY_SCOPE_RESULTS):
-                return
+                return originalResult
             player = getattr(result, 'player', None)
             dbID = getattr(player, 'dbID', None)
             # A results bot has no dbID at all; same rule as _resultsIsBot.
             if not _badgeHiddenFor(dbID=dbID, isBot=not dbID):
-                return
+                return originalResult
             for field in ('badge', 'suffixBadgeIcon', 'suffixBadgeStripIcon'):
                 try:
                     setattr(self, field, None)
@@ -1820,6 +1949,7 @@ def _hookTeamStatsBadge(original):
         except Exception:
             logError('team-stats badge strip failed: %s'
                      % traceback.format_exc())
+        return originalResult
     return setRecord
 
 
@@ -1842,14 +1972,14 @@ def _hookTeamBadgeBlock(original):
     """
 
     def setRecord(self, result, reusable):
-        original(self, result, reusable)
+        originalResult = original(self, result, reusable)
         try:
             if not CONFIG.scope(KEY_SCOPE_RESULTS):
-                return
+                return originalResult
             player = getattr(result, 'player', None)
             dbID = getattr(player, 'dbID', None)
             if not _badgeHiddenFor(dbID=dbID, isBot=not dbID):
-                return
+                return originalResult
             for field, value in (('icon', u''), ('content', u''),
                                  ('sizeContent', u''), ('isDynamic', False)):
                 try:
@@ -1859,6 +1989,7 @@ def _hookTeamBadgeBlock(original):
         except Exception:
             logError('team BadgeBlock strip failed: %s'
                      % traceback.format_exc())
+        return originalResult
     return setRecord
 
 
@@ -1990,8 +2121,15 @@ def _tabGetSet(playerModel, getter, setter, value):
 
 
 def _anonymiseTabPlayer(playerModel):
-    """Rewrite one TAB-panel player model so it shows an anonymised name."""
-    if not CONFIG.scope(KEY_SCOPE_BATTLE):
+    """Rewrite one TAB-panel player model so it shows an anonymised name.
+
+    The TAB full-stats board is its own surface (scope.tabPanel), separate from
+    the side panels (scope.playersPanel): the side panels are Scaleform
+    VehicleInfoComponent, this is the Gameface TabView with its own models.
+
+    Names and badges both respect the TAB surface switch.
+    """
+    if not CONFIG.surface(KEY_SCOPE_TAB):
         return
     try:
         dbID = _tabPlayerId(playerModel)
@@ -2108,7 +2246,8 @@ def _hookTabInvalidatePersonalInfo(original):
     """TabView._invalidatePersonalInfo(self, player) -- fills name + clan."""
 
     def _invalidatePersonalInfo(self, player):
-        result = original(self, player)
+        with _Surface(KEY_SCOPE_TAB):
+            result = original(self, player)
         _anonymiseTabPlayer(player)
         return result
     return _invalidatePersonalInfo
@@ -2118,7 +2257,8 @@ def _hookTabInvalidateVehiclesInfo(original):
     """TabView._invalidateVehiclesInfo(self) -- first fill of every player."""
 
     def _invalidateVehiclesInfo(self):
-        result = original(self)
+        with _Surface(KEY_SCOPE_TAB):
+            result = original(self)
         try:
             viewModel = getattr(self, 'viewModel', None)
             playerList = getattr(viewModel, 'playerList', None) if viewModel else None
@@ -2147,24 +2287,112 @@ def _hookTabInvalidateVehiclesInfo(original):
 # PlayerFullNameFormatter.format() had no effect on the panel.
 # ---------------------------------------------------------------------------
 
+def _surfaceWrapper(key):
+    """Build a patch() factory that runs the original inside a surface context.
+
+    Every entry point below does the same thing: mark which screen is building
+    this name, call the client's own method unchanged, then unwind.  The masking
+    itself happens in the SHARED helpers (format / getPlayerLabel /
+    getDisplayedName), which is the only place that sees the name in time.
+
+    Pushing unconditionally is deliberate.  Skipping the push when the switch is
+    off would make the shared helper fall back to scope.inBattle and mask the
+    name anyway -- which is exactly the bug this replaces.
+
+    The original method's exceptions are NOT caught: the client's own error
+    handling must keep working, and _Surface.__exit__ unwinds the stack in any
+    case.
+    """
+
+    def factory(original):
+        def wrapped(*args, **kwargs):
+            with _Surface(key):
+                return original(*args, **kwargs)
+        return wrapped
+    return factory
+
+
+def _panelSurfaceKey():
+    """The players-panel switch, used for BOTH panel surfaces.
+
+    The loading-screen team lists and the in-battle side panels both go through
+    VehicleInfoComponent.addVehicleInfo -- measured in game.log:
+
+        loading screen : loaders.py:viewLoaded
+        in-battle HUD  : AvatarVehiclesInfoBase.py:setNested_vehiclesInfo
+
+    They are deliberately NOT separate switches.  `_data` is a flat per-row dict
+    (fields like playerName / playerFullName, not one entry per vehicleID), and
+    the rows written during loading are NOT re-created when the battle starts:
+    only the handful that get refreshed during the battle are.  With two
+    switches, turning the in-battle one off produced a half-masked panel --
+    rows written at loading kept their labels, refreshed rows showed real names.
+
+    One switch keeps the panel internally consistent, which is what a viewer
+    actually sees.
+    """
+    return KEY_SCOPE_PANEL
+
+
 def _hookVehicleInfoComponentAdd(original):
-    """VehicleInfoComponent.addVehicleInfo(self, vInfoVO, overrides)."""
+    """VehicleInfoComponent.addVehicleInfo(self, vInfoVO, overrides).
+
+    Both the LOADING-SCREEN team lists and the in-battle SIDE PANELS go through
+    this one method, so they cannot be told apart by the component -- see
+    _panelSurfaceKey() for how the caller is used instead.
+
+    It builds each row from ctx.getPlayerFullName(...), i.e. through
+    PlayerFullNameFormatter.format, so running the original inside the matching
+    surface context is what decides whether the name comes out masked.  The clan
+    tag is separate: the client reads it straight off `playerVO.clanAbbrev`
+    rather than from the formatted string.
+    """
 
     def addVehicleInfo(self, vInfoVO, overrides=None):
-        result = original(self, vInfoVO, overrides)
-        try:
-            if not CONFIG.scope(KEY_SCOPE_BATTLE) or not CONFIG.flag(KEY_HIDE_CLAN_TAG):
-                return result
-            playerVO = getattr(vInfoVO, 'player', None)
-            if playerVO is None or not ANONYMISER.isStranger(playerVO):
-                return result
-            data = getattr(self, '_data', None)
-            if isinstance(data, dict) and data.get('clanAbbrev'):
-                data['clanAbbrev'] = u''
-        except Exception:
-            logError('panel clan strip failed: %s' % traceback.format_exc())
-        return result
+        key = _panelSurfaceKey()
+        with _Surface(key):
+            result = original(self, vInfoVO, overrides)
+            try:
+                if not CONFIG.surface(key) \
+                        or not CONFIG.flag(KEY_HIDE_CLAN_TAG):
+                    return result
+                playerVO = getattr(vInfoVO, 'player', None)
+                if playerVO is None or not ANONYMISER.isStranger(playerVO):
+                    return result
+                data = getattr(self, '_data', None)
+                if isinstance(data, dict) and data.get('clanAbbrev'):
+                    data['clanAbbrev'] = u''
+            except Exception:
+                logError('panel clan strip failed: %s' % traceback.format_exc())
+            return result
     return addVehicleInfo
+
+
+# ---------------------------------------------------------------------------
+# 3D vehicle markers and the minimap
+#
+# Both resolve their label through VehicleArenaInfoVO.getDisplayedName (via
+# _getDisplayedName / _getVehicleName), so the switch is enforced by pushing the
+# matching surface context around the client's own entry points:
+#
+#   VehicleMarkerPlugin.addVehicleInfo / _setVehicleInfo   -> scope.markers
+#   ArenaVehiclesPlugin.addVehicleInfo / _setVehicleInfo   -> scope.minimap
+#
+# Verified signatures (from the client bytecode):
+#   VehicleMarkerPlugin.addVehicleInfo(self, vo, arenaDP)
+#   VehicleMarkerPlugin._setVehicleInfo(self, marker, vInfo, guiProps, nameParts)
+#   ArenaVehiclesPlugin.addVehicleInfo(self, vo, arenaDP)
+#   ArenaVehiclesPlugin._setVehicleInfo(self, vehicleID, entry, vInfo,
+#                                      guiProps, isSpotted)
+#
+# Note the marker setter takes `marker`, NOT a vehicle id, and both minimap
+# methods hand off to `entry.setVehicleInfo(...)` -- there is no dict to edit
+# afterwards, which is why wrapping the call is the only workable point.
+# ---------------------------------------------------------------------------
+
+_hookMarkerSetVehicleInfo = _surfaceWrapper(KEY_SCOPE_MARKERS)
+_hookMinimapSetVehicleInfo = _surfaceWrapper(KEY_SCOPE_MINIMAP)
+_hookMessagesGetPlayerInfo = _surfaceWrapper(KEY_SCOPE_MESSAGES)
 
 
 # ---------------------------------------------------------------------------
@@ -2176,6 +2404,36 @@ class Installer(object):
     def __init__(self):
         self._undos = []
         self._installed = False
+
+    def _patchFirstAvailable(self, label, candidates, cls_name, methods,
+                             factory):
+        """Patch `cls_name` in the first candidate module that defines it.
+
+        The client does not keep these plugins in one predictable module name
+        across versions, and guessing wrong is silent: install() logs one line
+        and that surface's switch quietly does nothing.  So try every known path
+        and report which one won.
+        """
+        for module_path in candidates:
+            try:
+                module = __import__(module_path, {}, {}, ['__name__'])
+            except Exception:
+                continue
+            cls = getattr(module, cls_name, None)
+            if cls is None:
+                continue
+            patched = []
+            for name in methods:
+                undo = patch(cls, name, factory)
+                if undo:
+                    self._undos.append(undo)
+                    patched.append(name)
+            logInfo('%s hooks installed from %s: %s'
+                    % (label, module_path, ', '.join(patched) or 'none'))
+            return True
+        logError('%s hooks unavailable: %s not found in any of %s'
+                 % (label, cls_name, ', '.join(candidates)))
+        return False
 
     def install(self):
         if self._installed:
@@ -2263,7 +2521,7 @@ class Installer(object):
             from gui.battle_control.arena_info import arena_vos as _avos
             for name, factory in (
                     ('selectedBadge', _hookSelectedBadge),
-                    ('selectedSuffixBadge', _hookSelectedSuffixBadge)):
+                    ('selectedSuffixBadge', _hookSelectedBadge)):
                 undo = patch(_avos.VehicleArenaInfoVO, name, factory,
                              is_property=True)
                 if undo:
@@ -2284,25 +2542,46 @@ class Installer(object):
             logError('postmortem badge hook unavailable: %s'
                      % traceback.format_exc())
 
-        # The global badge helpers: TAB (and anything else that resolves badges
-        # without a player VO) goes through these.
-        try:
-            from gui.shared import badges as _badges
-            undo = patch(_badges, 'buildBadge', _hookBuildBadge)
-            if undo:
-                self._undos.append(undo)
-        except Exception:
-            logError('buildBadge hook unavailable: %s'
-                     % traceback.format_exc())
+        # Per-surface switches.  These entry points only push a surface context;
+        # the masking itself is done by the shared helpers, which consult it.
+        #
+        # IMPORTANT: the module paths are NOT the obvious ones.  The marker and
+        # minimap plugins live in `...shared.markers2d.vehicle_plugins` and
+        # `...shared.minimap.plugins`, NOT both under a `plugins` module -- the
+        # first version imported `markers2d.plugins` and install() failed with
+        # "module object has no attribute VehicleMarkerPlugin", so the marker
+        # switch silently did nothing.  Try every known spelling.
+        for label, candidates, cls_name, methods, factory in (
+                ('marker',
+                 ('gui.Scaleform.daapi.view.battle.shared.markers2d'
+                  '.vehicle_plugins',
+                  'gui.Scaleform.daapi.view.battle.shared.markers2d.plugins',
+                  'gui.Scaleform.daapi.view.battle.shared.vehicle_plugins'),
+                 'VehicleMarkerPlugin',
+                 ('addVehicleInfo', 'updateVehiclesInfo',
+                  'invalidateVehiclesInfo', '_setVehicleInfo'),
+                 _hookMarkerSetVehicleInfo),
+                ('minimap',
+                 ('gui.Scaleform.daapi.view.battle.shared.minimap.plugins',
+                  'gui.Scaleform.daapi.view.battle.shared.minimap'
+                  '.vehicle_plugins'),
+                 'ArenaVehiclesPlugin',
+                 ('addVehicleInfo', 'updateVehiclesInfo',
+                  'invalidateVehiclesInfo', '_setVehicleInfo'),
+                 _hookMinimapSetVehicleInfo),
+        ):
+            self._patchFirstAvailable(label, candidates, cls_name, methods,
+                                      factory)
 
         try:
-            from gui.doc_loaders import badges_loader as _bl
-            undo = patch(_bl, 'getSelectedByLayout', _hookGetSelectedByLayout)
+            from gui.Scaleform.daapi.view.battle.shared.messages import (
+                vehicle_messages)
+            undo = patch(vehicle_messages.VehicleMessages, '_getPlayerInfo',
+                         _hookMessagesGetPlayerInfo)
             if undo:
                 self._undos.append(undo)
         except Exception:
-            logError('getSelectedByLayout hook unavailable: %s'
-                     % traceback.format_exc())
+            logError('messages hook unavailable: %s' % traceback.format_exc())
 
         # Results screen: badges are packed per player DBID.
         try:
@@ -2404,11 +2683,16 @@ def fini():
 
 
 def onAvatarBecomePlayer(*args, **kwargs):
-    """Entering a battle: fresh numbering, refreshed identity."""
+    """Entering a battle: fresh numbering, fresh identity.
+
+    IDENTITY.reset() runs first so the previous battle's platoon mates cannot
+    survive into this one; resolve() then takes a complete new snapshot.
+    """
     if not _ACTIVE:
         return
     try:
         ANONYMISER.reset()
+        IDENTITY.reset()
         IDENTITY.resolve()
         INSTALLER.install()
     except Exception:
@@ -2433,9 +2717,17 @@ def onAvatarBecomeNonPlayer(*args, **kwargs):
 
 
 def onAccountBecomePlayer(*args, **kwargs):
+    """Account boundary: a different account may not share the same exemptions.
+
+    Everything is dropped before re-resolving -- otherwise one account's friends
+    and clan would stay exempt while playing on another.  The anonymiser is
+    reset too, since DBIDs from the old account mean nothing on the new one.
+    """
     if not _ACTIVE:
         return
     try:
+        IDENTITY.reset()
+        ANONYMISER.reset()
         IDENTITY.resolve()
     except Exception:
-        pass
+        logError('onAccountBecomePlayer failed: %s' % traceback.format_exc())

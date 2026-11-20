@@ -9,8 +9,12 @@ This is a port of the idea behind
 [AndrewTaro/StreamerMode](https://github.com/AndrewTaro/StreamerMode) for World of
 Warships. WoT had no equivalent mod: Wargaming's own *Anonymizer* works the other
 way round (it hides **your own** name, server-side, for everyone else), and the
-WoT mod scene mostly built the inverse — tools that *reveal* names. This is the
-first mod that hides everyone else's names on your own screen.
+WoT mod scene mostly built the inverse — tools that *reveal* names. This mod
+hides other players' names on your own screen.
+
+> It covers the main battle surfaces, but does not guarantee that an identity is
+> hidden in every screen or every situation. The exceptions are listed under
+> "Privacy boundaries" below.
 
 ## What it does
 
@@ -24,9 +28,9 @@ In battle, every stranger's nickname becomes a stable per-battle label:
     BuddyName    [ALLY]  (Bat.-Châtillon)   <- friend
 ```
 
-The same stranger keeps the same number everywhere — players panel, minimap,
-damage log, kill messages, 3D markers, postmortem panel, TAB full-stats — so the
-layout still reads naturally.
+The same stranger keeps the same number on **every covered surface** — players
+panel, minimap, damage log, kill messages, 3D markers, postmortem panel, TAB
+full-stats — so the layout still reads naturally.
 
 You can also set `"mode": "blank"` to show nothing at all instead of a label.
 
@@ -63,26 +67,42 @@ in-game menu, your value always wins.
 
 ## Install
 
-Copy **`build/akemi.streamermode_1.0.wotmod`** to:
+Download **`akemi.streamermode_1.0.2.zip`** from
+[Releases](https://github.com/becausemadoka/wot-streamer-mode/releases)
+(`build/` when built locally). It holds three `.wotmod` packages and a
+`THIRD-PARTY-NOTICE.txt`:
+
+| File | Purpose |
+|---|---|
+| `akemi.streamermode_1.0.2.wotmod` | the mod itself |
+| `aslain.modmenu_2.1.15.wotmod` | the in-game settings menu (dependency) |
+| `net.openwg.gameface_1.2.2.wotmod` | runtime Mod Menu requires |
+
+Extract **all three `.wotmod` files together** into:
 
 ```
 <game>/mods/<client version>/
 ```
 
-That is all. Nothing in `res_mods` is touched, so a game update that changes
-scripts cannot leave a stale override behind.
-
 > The folder under `mods/` must match the client's current version (see
 > `res/version.xml`). The game will not load a package from a mismatched folder.
 
+With only the mod itself and not the other two, it still runs and still
+anonymises nicknames, but you get no GUI and have to edit the config file. All
+three are redistributed unchanged; Mod Menu and Gameface are third-party work and
+are not covered by this project's MIT declaration. Mod Menu's source repository
+uses MIT, but its bundled NOTICE says that licence does not cover the built
+package and that passing the file on unchanged is allowed. See
+`THIRD-PARTY-NOTICE.txt`, which reproduces both upstream licence texts.
+
+Nothing in `res_mods` is touched, so a game update that changes scripts cannot
+leave a stale override behind.
+
 ## In-game settings menu
 
-The mod registers a settings page with **Aslain Mod Menu / ModsSettingsAPI**, so
-you can change everything in game instead of editing files.
-
-Optional dependency: [ModsSettingsAPI](https://wgmods.net/2340/)
-(`izeberg.modssettingsapi`). Without that framework the mod still works — you
-just get the JSON config below instead of the GUI.
+The mod registers a settings page with **Aslain Mod Menu** (a ModsSettingsAPI
+front end), so you can change everything in game instead of editing files. The
+menu ships in the release archive above; there is nothing extra to download.
 
 The menu provides (labels follow the client language):
 
@@ -93,7 +113,7 @@ The menu provides (labels follow the client language):
 | Keep real names for | yourself, friends, clanmates, platoon mates, also hide clan tags, also hide clan tags on the results screen |
 | Badges (medals) | hide badges next to nicknames, also hide bot badges, keep badges for people you know |
 | Player details window | show real names in the profile window |
-| Screens to anonymise | battle HUD, post-battle results, players panel (Tab), minimap, kill/event messages, vehicle markers, death-cam panel |
+| Screens to anonymise | battle HUD, post-battle results, side panels, TAB scoreboard, minimap, kill/event messages, vehicle markers, death-cam panel |
 
 > Scope changes apply to the **next battle** — the name list for the current
 > battle is already built.
@@ -117,13 +137,14 @@ Optionally copy `config.default.json` to
 | `exclude.divmateName` | `true` | keep platoon mates' names |
 | `hideClanTag` | `true` | also hide strangers' clan tags |
 | `hideResultsClanTag` | `true` | also hide clan tags on the results screen (it reads the tag directly, so it needs its own switch) |
-| `hideBadges` | `true` | hide badges next to nicknames |
+| `hideBadges` | `true` | hide badges only on screens enabled for anonymisation. Turning off the TAB or post-battle results switch leaves badges unchanged on that screen |
 | `hideBotBadges` | `true` | also hide bot badges |
 | `badges.exemptKnown` | `true` | keep badges for self/friends/clan/platoon |
 | `showRealNamesInProfile` | `true` | show real names in the single-player profile window (set `false` to keep it masked too) |
 | `scope.inBattle` | `true` | battle HUD |
 | `scope.battleResults` | `true` | post-battle results |
-| `scope.playersPanel` | `true` | players panel (Tab) |
+| `scope.playersPanel` | `true` | side panels (and the loading-screen team lists) |
+| `scope.tabPanel` | `true` | the full-screen TAB scoreboard |
 | `scope.minimap` | `true` | minimap |
 | `scope.messages` | `true` | kill / event messages |
 | `scope.markers` | `true` | vehicle markers |
@@ -159,12 +180,12 @@ for 2.7 automatically (via `py -2.7`); set `WOT_PY27` to a `python.exe` path if
 you need to point at a specific interpreter.
 
 ```powershell
-python build.py          # compile with Python 2.7 + package the .wotmod
+python build.py          # compile with Python 2.7 + package .wotmod/.zip
 py -2.7 test_mod.py          # behaviour (19 checks)
 py -2.7 test_real_client.py  # against the REAL client classes (13)
 py -2.7 test_loader.py       # client mod-loader simulation (9)
 py -2.7 test_package.py      # package is loadable by the game (8)
-py -2.7 test_settings.py     # settings menu integration (51)
+py -2.7 test_settings.py     # settings menu integration (52)
 py -2.7 test_tab_panel.py    # TAB panel + clan tags (18)
 py -2.7 test_identity.py     # identity detection, self never masked (13)
 py -2.7 test_bots.py         # official bot prefix (18)
@@ -172,10 +193,13 @@ py -2.7 test_bot_numbering.py   # each bot gets a distinct stable number (12)
 py -2.7 test_tab_bot_numbers.py # TAB and panel numbers agree (13)
 py -2.7 test_results_numbers.py # results numbers match the battle (17)
 py -2.7 test_profile_clan.py # results clan hiding + profile switch (18)
-py -2.7 test_badges.py       # badge hiding (27)
-py -2.7 test_team_badges.py  # team-stats badge hiding (17)
-py -2.7 test_results.py      # results: bots vs players (25)
+py -2.7 test_badges.py       # badge hiding (43)
+py -2.7 test_team_badges.py  # team-stats badge hiding (21)
+py -2.7 test_results.py      # results: bots vs players (30)
 py -2.7 test_prefix_language.py # prefix follows the client language (18)
+py -2.7 test_surface_switches.py # per-surface switches + failure isolation (113)
+py -2.7 test_review_findings.py  # review-finding regressions (22)
+py -2.7 test_internal_artifact.py # version-locked internal build (19)
 ```
 
 `test_real_client.py`, `test_package.py` and `refresh_fixtures.py` read client
@@ -206,11 +230,31 @@ another mod already replaced.
   they too use Wargaming's anonymizer.
 * Battles are the focus; hangar, clan and chat windows are untouched.
 * Replay playback uses the same battle path, so names are anonymised there too.
-* The post-battle scoreboard only anonymises names it can attribute to a DBID;
-  it deliberately leaves alone any player the game's own anonymizer already
-  renamed.
-* The settings menu needs ModsSettingsAPI; without it everything still works but
-  there is no GUI.
+* The post-battle scoreboard labels every stranger, including players the game's
+  own anonymiser already renamed -- a native fake name is still a per-player
+  identifier. Exempted players keep their real data.
+* The settings menu comes from the Aslain Mod Menu bundled in the release; with
+  only the mod package installed there is no GUI and you edit the config file.
+
+### Privacy boundaries (please read)
+
+This mod does **not** guarantee that an identity is hidden in every situation.
+These cases are deliberate, or may still show the original text:
+
+| Case | Behaviour | Why |
+|---|---|---|
+| **Opening one player's profile** | **shows the real name and clan by default** | looking someone up is a deliberate action; controlled by `showRealNamesInProfile`, on by default |
+| A client display function cannot be found | that surface keeps the original text | on a client update the mod disables only that one hook rather than guessing |
+| A hook raises | that surface fails in the safe direction (name blanked, badge kept) | hiding more is preferred, but full coverage cannot be guaranteed |
+| Your own name | always real | that is the point |
+| Friends / clanmates / platoon mates | always real | can be turned off with `exclude.*` |
+| Players the game's Anonymizer already renamed | relabelled by this mod as well | the game's own anonymisation is unaffected |
+| Chat, garage, clan windows | not touched | this mod only covers the battle |
+| Loading-screen lists vs in-battle side panels | **one shared switch: both on or both off** | the client reuses the rows written at loading, so splitting them produced a half-masked panel |
+
+If you need "no real name anywhere", set `showRealNamesInProfile` to `false`, and
+note that the missing-hook case above can still leave original text — that is a
+client-compatibility limit, and the mod logs it instead of failing silently.
 
 ## Troubleshooting
 

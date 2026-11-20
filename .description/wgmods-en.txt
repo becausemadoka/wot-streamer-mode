@@ -1,0 +1,71 @@
+Hide other players' names. Keep your own.
+
+Streamer Mode anonymises strangers' nicknames during a battle, so a live stream
+does not broadcast other people's identities. Friends, clanmates, platoon mates
+and yourself keep their real names.
+
+Every stranger becomes a stable label that stays the same for the whole battle,
+e.g. Player_001 [ENEMY] (T-34-85). The number is per-battle and consistent, so
+the scoreboard still reads naturally. Official bots get their own prefix and
+counter, Bot_001.
+
+Covered: players panel, minimap, damage log, kill and event messages, 3D markers,
+death-cam panel, the TAB full-stats page, and both scoreboards after the battle.
+
+Only the text the client draws is changed, never stored game data, so a bug
+cannot corrupt your account or the battle, and removing the mod restores names.
+
+On a Chinese client strangers show 玩家_001 instead of Player_001. Other
+languages keep Player_. The prefix is fully configurable.
+
+BADGES AND BOTS
+
+By default, strangers' and bots' badges are hidden; people you know keep theirs.
+Turn off a screen's switch and its badges stay unchanged, including on the TAB
+scoreboard and post-battle results.
+
+CONFIGURATION
+
+Configurable in game. The download includes Aslain Mod Menu and OpenWG Gameface,
+so the settings page works with nothing else installed. With only the mod package
+it still works and reads mods/configs/akemi.streamermode/config.json.
+
+Options: replace or hide the name, custom prefixes, who keeps a real name, clan
+tags, badges, and per-screen switches. Defaults are the privacy-preserving
+values; an unreadable config falls back to them.
+
+The loading-screen team lists and the in-battle side panels share one switch,
+because the client reuses the rows written at loading.
+
+PRIVACY NOTE
+
+Hiding a name on your screen does not hide it from anyone else. Other players
+still see your name unless they also use Wargaming's Anonymizer. This mod is the
+mirror image: it hides everyone else from YOU.
+
+It does NOT guarantee every identity is hidden everywhere. Exceptions:
+
+  * opening one player's profile shows their real name by default
+    (turn it off with showRealNamesInProfile)
+  * if a client update renames a display function, that surface keeps the
+    original text -- the mod disables that hook and logs it
+  * chat, garage and clan windows are not covered
+  * your own name, friends, clanmates and platoon mates stay real
+
+INSTALL
+
+Extract all three .wotmod files into <game folder>/mods/<client version>/
+(see res/version.xml):
+
+  akemi.streamermode_1.0.2.wotmod   the mod
+  aslain.modmenu_2.1.15.wotmod      the settings menu
+  net.openwg.gameface_1.2.2.wotmod  runtime the menu needs
+
+Nothing outside mods/ is touched. Mod Menu and Gameface are third-party work,
+redistributed unchanged under their own terms. Mod Menu's source repository is
+MIT, but its package NOTICE says that licence does not cover the built package
+and permits passing the file on unchanged; see THIRD-PARTY-NOTICE.txt, which
+reproduces both upstream licence texts.
+
+Only text drawn on screen is changed: no armour, spotting, aiming or automation
+features, no game file modified, no network communication. License: MIT.

@@ -214,6 +214,36 @@ check('results: friend name preserved', friendInfo.realName == 'BuddyName',
       friendInfo.realName)
 
 print()
+print('=== results: own name survives an unresolved identity snapshot ===')
+# Regression, reported in game: the personal scoreboard showed the streamer as
+# 玩家_001.  onAvatarBecomePlayer() resets the snapshot and re-resolves it before
+# the arena exists, so ownDBID is None for the first frames; the results screen
+# renders later and used to mask the player's own row.
+_savedOwn = mod.IDENTITY.ownDBID
+_savedTries = mod.IDENTITY._tries
+mod.IDENTITY.ownDBID = None
+mod.IDENTITY._tries = 0
+# resolve() is what the retry calls; make it discover us, as it would in game.
+_origResolve = mod.Identity.resolve
+
+
+def _resolvesToUs(self):
+    self.ownDBID = 1000
+    self.resolved = True
+mod.Identity.resolve = _resolvesToUs
+try:
+    _me = BRPlayerInfo(dbID=1000, realName='MyOwnName', vehicleID=503)
+    check('results: own row keeps the real name when ownDBID starts empty',
+          _me.realName == 'MyOwnName', _me.realName)
+    _str = BRPlayerInfo(dbID=9000, realName='SomeStranger', vehicleID=505)
+    check('results: a stranger is still masked in the same situation',
+          _str.realName.startswith('Player_'), _str.realName)
+finally:
+    mod.Identity.resolve = _origResolve
+    mod.IDENTITY.ownDBID = _savedOwn
+    mod.IDENTITY._tries = _savedTries
+
+print()
 print('=== results: clanmate / squadmate keep their real names too ===')
 # Regression: _resultsLabel only exempted self and friends, while the in-battle
 # path (isStrangerIdentity) and the results clan-tag hook both exempt four
@@ -299,12 +329,27 @@ same = BRPlayerInfo(dbID=None, realName=':Ivan Petrov:').realName
 check('botMode=label uses the player scheme', same.startswith('Player_'), same)
 
 print()
-print('=== game-anonymised players still left alone ===')
+print('=== game-anonymised players are masked too, not passed through ===')
+# Reviewer finding: an earlier version returned the value unchanged whenever
+# realName != fakeName, which left the native fake name readable on the
+# scoreboard.  A fake name is still a per-player identifier, so a stranger must
+# be labelled on top of it.
 mod.CONFIG._values['botMode'] = 'botLabel'
 mod.ANONYMISER.reset()
 anonymised = BRPlayerInfo(dbID=8001, realName='RealNick', fakeName='FakeNick')
-check('client-anonymised name untouched', anonymised.realName == 'RealNick',
-      anonymised.realName)
+check('client-anonymised stranger is masked, not passed through',
+      anonymised.realName.startswith('Player_'), anonymised.realName)
+check('the native fake name is not shown',
+      anonymised.realName != 'FakeNick', anonymised.realName)
+check('the real name is not shown',
+      anonymised.realName != 'RealNick', anonymised.realName)
+# ...but an exempted player keeps the real name even if the game anonymised them.
+mod.IDENTITY.ownDBID = 8001
+mod.ANONYMISER.reset()
+mine = BRPlayerInfo(dbID=8001, realName='RealNick', fakeName='FakeNick')
+check('exempted player keeps real name despite native anonymiser',
+      mine.realName == 'RealNick', mine.realName)
+mod.IDENTITY.ownDBID = 1000
 
 print()
 print('=== scope.battleResults=false disables the hook ===')

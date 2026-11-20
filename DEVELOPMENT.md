@@ -39,12 +39,16 @@ StreamerModeWoT/
 ## 构建
 
 ```powershell
-python build.py          # -> build/akemi.streamermode_<客户端版本>.wotmod
+python build.py          # -> build/akemi.streamermode_<版本>.wotmod + .zip
 python build_internal.py # -> dist_internal/（锁定版本的内部测试版）
 ```
 
 `build.py` 自带校验：所有条目 STORED、`meta.xml` 是合法 XML、`.pyc` magic 正确、
 入口函数齐全。任何一项不通过都会中止构建，所以坏包不会在无提示的情况下产生。
+
+完整发布 zip 还需要把两个第三方包原样放进 `vendor/`：
+`aslain.modmenu_2.1.15.wotmod` 和 `net.openwg.gameface_1.2.2.wotmod`。它们不随
+源码仓库提交，需从上游发布页获取；缺少时 `build.py` 会明确报错。
 
 `build_internal.py` 会复制源码、填入 `TARGET_VERSION`、编译后打包。锁定版在
 其他客户端版本上会拒绝运行：`init()` 在安装任何钩子之前就返回，只写一行
@@ -65,15 +69,18 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 | `test_bot_numbering.py` | 12 | 每台机器人编号互不相同且稳定 |
 | `test_tab_panel.py` | 18 | TAB 全屏战绩面板 + 军团标签 |
 | `test_tab_bot_numbers.py` | 13 | TAB 与战斗内面板编号一致 |
-| `test_results.py` | 25 | 结算界面：机器人与玩家、豁免规则 |
+| `test_results.py` | 30 | 结算界面：机器人与玩家、豁免规则 |
 | `test_results_numbers.py` | 17 | 结算编号与战斗内一致 |
-| `test_team_badges.py` | 17 | 团队战绩奖章隐藏 |
+| `test_team_badges.py` | 21 | 团队战绩奖章隐藏 |
 | `test_profile_clan.py` | 18 | 结算军团隐藏 + 资料页开关 |
-| `test_badges.py` | 27 | 奖章隐藏（战斗内 / 机器人 / 豁免 / 总开关） |
+| `test_badges.py` | 43 | 奖章隐藏（战斗内 / 机器人 / 豁免 / 总开关） |
 | `test_prefix_language.py` | 18 | 前缀跟随客户端语言 |
-| `test_settings.py` | 51 | 设置页注册、版本递增、回调签名兼容 |
+| `test_settings.py` | 52 | 设置页注册、版本递增、回调签名兼容 |
+| `test_surface_switches.py` | 113 | 各界面开关、异常隔离与恢复 |
+| `test_review_findings.py` | 22 | 复查发现的问题回归 |
 | `test_loader.py` | 9 | 模拟客户端 mod 加载器 |
 | `test_package.py` | 8 | 复刻加载器的包校验 |
+| `test_internal_artifact.py` | 19 | 内部版版本锁与产物校验 |
 | `test_version_lock.py` | 38 | 版本锁机制 |
 
 客户端打完补丁后要**先刷新 fixture**，否则测试验证的是旧客户端 —— 可能全绿但插件其实已经坏了：
@@ -172,4 +179,5 @@ py -2.7 test_real_client.py
 - **只影响你自己的客户端**；别人看到的仍是真名。
 - 只覆盖战斗流程，车库、军团、聊天窗口未处理。
 - 回放走同一套逻辑，所以名字同样被匿名。
-- 结算界面会刻意跳过**游戏官方匿名功能已经改过**的玩家。
+- 结算界面会对所有陌生人打码，**包括游戏官方匿名功能已经改过名字的玩家**；
+  官方生成的假名同样是逐玩家的标识。豁免对象仍显示真实数据。

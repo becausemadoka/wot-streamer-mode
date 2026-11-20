@@ -13,7 +13,7 @@ import types
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WOTMOD = os.path.join(HERE, 'build', 'akemi.streamermode_1.0.wotmod')
+WOTMOD = os.path.join(HERE, 'build', 'akemi.streamermode_1.0.2.wotmod')
 STAGE = os.path.join(HERE, 'build', '_install_sim')
 
 PASS, FAIL = [], []

@@ -359,10 +359,14 @@ if PlayerInfoVO is not None:
                 friend2 = make_pi(2, 'BuddyName', '')
                 check('results: friend keeps real name',
                       friend2.realName == 'BuddyName', friend2.realName)
-                # game's own anonymiser already applied -> leave untouched
+                # game's own anonymiser already applied -> still masked, because
+                # a native fake name is a per-player identifier too (reviewer
+                # finding: this used to be passed through untouched).
                 already = make_pi(777, 'RealGuy', 'FakeGuy')
-                check('results: game-anonymised player left alone',
-                      already.realName == 'RealGuy', already.realName)
+                label = already.realName or ''
+                check('results: game-anonymised stranger is masked',
+                      label.startswith('Player_') and label not in
+                      ('RealGuy', 'FakeGuy'), label)
                 mod.CONFIG._values['scope.battleResults'] = False
                 off = make_pi(888, 'VisibleName', '')
                 check('results: scope off => real name', off.realName == 'VisibleName',

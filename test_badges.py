@@ -12,13 +12,10 @@ all of which must agree:
                -> players panel, death-cam, event panels, pre-battle markers
   TAB panel    TabView._invalidatePersonalInfo -> BadgeModel.setBadgeID
   results      UserNames._setBadges -> UserNameModel.setBadgeID
-  blanket      gui.shared.badges.buildBadge / badges_loader.getSelectedByLayout
+  unscoped     gui.shared.badges.buildBadge / badges_loader.getSelectedByLayout
 
-A trap worth recording: VehicleArenaInfoVO.__init__ itself calls
-getSelectedByLayout() while building the VO, BEFORE `player` is attached.  A hook
-there that blindly returns (0, 0) would strip badges from self, friends and
-clanmates as well, silently defeating the exemption -- which is why that helper
-only acts when the exemption is switched off.
+The VO caches the layout before player identity is attached. Suppression is a
+rendering decision; an identity-less lookup must not poison that cache.
 
 Python 2.7.
 """
@@ -83,11 +80,9 @@ class VehicleArenaInfoVO(object):
     def __init__(self, vehicleID=0, player=None, badges=(101, 202),
                  overriddenBadge=None):
         self.vehicleID = vehicleID
-        self.player = player
         self.overriddenBadge = overriddenBadge
-        # this is what the real arena_vos.pyc L488 does
-        self._prefixBadge, self._suffixBadge = \
-            getSelectedByLayout(list(badges))
+        self._prefixBadge, self._suffixBadge = bl.getSelectedByLayout(list(badges))
+        self.player = player
         self._badgeExtra = ('', '')
 
     @property
@@ -178,7 +173,16 @@ def buildBadge(badgeID, extraData=None):
     return _Badge(badgeID)
 
 
-shared_badges.buildBadge = buildBadge
+def other_badge_mod(original):
+    def decorated(badgeID, extraData=None):
+        badge = original(badgeID, extraData)
+        if badge is not None:
+            badge.other_mod_data = extraData
+        return badge
+    return decorated
+
+
+shared_badges.buildBadge = other_badge_mod(buildBadge)
 sys.modules['gui.shared.badges'] = shared_badges
 sys.modules['gui.shared'].badges = shared_badges
 
@@ -222,8 +226,8 @@ pm_mod = types.ModuleType(
 class PostmortemPanel(object):
     def _makeKillerVO(self, vInfoVO):
         userVO = {'playerName': 'x'}
-        badge = buildBadge(vInfoVO.selectedBadge,
-                           vInfoVO.getBadgeExtraInfo())
+        badge = shared_badges.buildBadge(vInfoVO.selectedBadge,
+                                         vInfoVO.getBadgeExtraInfo())
         if badge is not None:
             userVO['badgeVisualVO'] = badge.getBadgeVO(24)
         return userVO
@@ -368,37 +372,42 @@ def botVO(vid=300):
 
 
 print()
-print('=== in battle: a stranger loses the medal ===')
+print('=== VO reads depend on the rendering surface ===')
 vo = strangerVO()
-check('prefix badge hidden', vo.selectedBadge == 0, vo.selectedBadge)
-check('suffix badge hidden', vo.selectedSuffixBadge == 0,
-      vo.selectedSuffixBadge)
+
+
+def panel_badges(vo):
+    with mod._Surface(mod.KEY_SCOPE_PANEL):
+        return vo.selectedBadge, vo.selectedSuffixBadge
+
+
+check('unscoped VO reads are native',
+      (vo.selectedBadge, vo.selectedSuffixBadge) == (101, 202))
+check('panel hides both badges', panel_badges(vo) == (0, 0))
 check('death-cam user VO has no badge',
       'badgeVisualVO' not in PostmortemPanel()._makeKillerVO(vo),
       PostmortemPanel()._makeKillerVO(vo))
 
 print()
 print('=== in battle: you / friends keep the medal (exemption) ===')
-check('own badge kept', meVO().selectedBadge == 101, meVO().selectedBadge)
-check('friend badge kept', friendVO().selectedBadge == 101,
-      friendVO().selectedBadge)
+check('own badges kept', panel_badges(meVO()) == (101, 202))
+check('friend badges kept', panel_badges(friendVO()) == (101, 202))
 check('own death-cam badge kept',
       'badgeVisualVO' in PostmortemPanel()._makeKillerVO(meVO()),
       PostmortemPanel()._makeKillerVO(meVO()))
 
 print()
 print('=== bots lose the medal by default ===')
-check('bot badge hidden', botVO().selectedBadge == 0, botVO().selectedBadge)
+check('bot badges hidden', panel_badges(botVO()) == (0, 0))
 mod.CONFIG._values['hideBotBadges'] = False
-check('bot badge kept when switch off', botVO().selectedBadge == 101,
-      botVO().selectedBadge)
+check('bot badges kept when switch off', panel_badges(botVO()) == (101, 202))
 mod.CONFIG._values['hideBotBadges'] = True
 
 print()
 print('=== the master switch turns everything back on ===')
 mod.CONFIG._values['hideBadges'] = False
-check('stranger badge kept when master off', strangerVO().selectedBadge == 101,
-      strangerVO().selectedBadge)
+check('stranger badges kept when badge switch off',
+      panel_badges(strangerVO()) == (101, 202))
 check('death-cam badge kept when master off',
       'badgeVisualVO' in PostmortemPanel()._makeKillerVO(strangerVO()))
 mod.CONFIG._values['hideBadges'] = True
@@ -406,15 +415,28 @@ mod.CONFIG._values['hideBadges'] = True
 print()
 print('=== exemption switch OFF hides badges for everyone ===')
 mod.CONFIG._values['badges.exemptKnown'] = False
-check('own badge hidden when exemption off', meVO().selectedBadge == 0,
-      meVO().selectedBadge)
-check('friend badge hidden when exemption off', friendVO().selectedBadge == 0,
-      friendVO().selectedBadge)
-check('getSelectedByLayout returns (0, 0) when exemption off',
-      bl.getSelectedByLayout([101, 202]) == (0, 0),
-      bl.getSelectedByLayout([101, 202]))
-check('buildBadge returns None when exemption off',
-      shared_badges.buildBadge(101, None) is None)
+check('own badges hidden when exemption off', panel_badges(meVO()) == (0, 0))
+check('friend badges hidden when exemption off', panel_badges(friendVO()) == (0, 0))
+
+
+def check_unscoped(stage):
+    ids = [101, 202]
+    selected = bl.getSelectedByLayout(ids)
+    check(stage + ': native layout and input',
+          selected == (101, 202) and ids == [101, 202], (selected, ids))
+    extra = object()
+    badge = shared_badges.buildBadge(101, extra)
+    check(stage + ': preserves other mod decoration and arguments',
+          getattr(badge, 'badgeID', None) == 101 and
+          getattr(badge, 'other_mod_data', None) is extra, badge)
+
+
+check_unscoped('exemptKnown off')
+cached = meVO()
+mod.CONFIG._values['enable'] = False
+check('disabling master restores both cached badges on the same VO',
+      (cached.selectedBadge, cached.selectedSuffixBadge) == (101, 202))
+mod.CONFIG._values['enable'] = True
 mod.CONFIG._values['badges.exemptKnown'] = True
 
 print()
@@ -474,6 +496,23 @@ check('results own suffix kept',
       model2.suffixBadge.getBadgeID())
 
 print()
+print('=== reopen the personal results row across scope and account changes ===')
+mod.CONFIG._values.update({'badges.exemptKnown': False, 'scope.inBattle': False})
+for stage, transition, master, results, expected in (
+        ('return to account', mod.onAccountBecomePlayer, True, True, ('', '')),
+        ('reopen scope off', None, True, False, ('PREFIX_MEDAL', 'SUFFIX_MEDAL')),
+        ('reopen scope on', None, True, True, ('', '')),
+        ('next battle', mod.onAvatarBecomePlayer, False, True,
+         ('PREFIX_MEDAL', 'SUFFIX_MEDAL')),
+        ('leave battle', mod.onAvatarBecomeNonPlayer, True, True, ('', ''))):
+    if transition:
+        transition()
+    mod.CONFIG._values.update({'enable': master, 'scope.battleResults': results})
+    UserNames._setBadges(model2, None, 1)
+    pair = model2.badge.getBadgeID(), model2.suffixBadge.getBadgeID()
+    check(stage + ': results badges', pair == expected, (pair, expected))
+    check_unscoped(stage)
+
 print('=== failures never blank a badge by accident ===')
 mod.CONFIG._values['hideBadges'] = True
 # a VO with no player at all must not explode

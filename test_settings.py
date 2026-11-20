@@ -479,8 +479,11 @@ fresh_saved = {'enabled': True, 'mode': 0, 'namePrefix': 'Player_',
                'badgesExemptKnown': True,
                'showRealNamesInProfile': True,
                'scopeBattle': True, 'scopeResults': True,
-               'scopePanel': True, 'scopeMinimap': True, 'scopeMessages': True,
-               'scopeMarkers': True, 'scopePostmortem': True}
+               'scopePanel': True, 'scopeTab': True,
+               'scopeMinimap': True,
+               'scopeMessages': True,
+               'scopeMarkers': True, 'scopePostmortem': True,
+               'settingsVersion': mod.SETTINGS_VERSION}
 _Api._savedNext = fresh_saved
 currentPage = mod.SettingsPage(FakeConfig())
 currentPage.register()
@@ -488,6 +491,34 @@ check('no re-registration when template matches',
       len(calls['setModTemplate']) == 0, len(calls['setModTemplate']))
 check('callback attached instead',
       len(calls['registerCallback']) == 1, calls['registerCallback'])
+_Api._savedNext = None
+
+print()
+print('=== an OLD template version forces a re-registration ===')
+# Renaming a checkbox keeps its varName, so the framework would keep showing
+# the stored label.  The version stamp is what makes the new text appear.
+calls['setModTemplate'] = []
+calls['registerCallback'] = []
+old_saved = dict(fresh_saved)
+old_saved['settingsVersion'] = mod.SETTINGS_VERSION - 1
+_Api._savedNext = old_saved
+currentPage = mod.SettingsPage(FakeConfig())
+currentPage.register()
+check('stale version re-sends the template',
+      len(calls['setModTemplate']) == 1, len(calls['setModTemplate']))
+_Api._savedNext = None
+
+print()
+print('=== a saved page predating a NEW control also re-registers ===')
+calls['setModTemplate'] = []
+calls['registerCallback'] = []
+no_tab = dict(fresh_saved)
+no_tab.pop('scopeTab')
+_Api._savedNext = no_tab
+currentPage = mod.SettingsPage(FakeConfig())
+currentPage.register()
+check('missing new control re-sends the template',
+      len(calls['setModTemplate']) == 1, len(calls['setModTemplate']))
 _Api._savedNext = None
 
 print()

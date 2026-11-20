@@ -5,6 +5,12 @@
 /build_internal/
 /dist_internal/
 
+# Third-party .wotmod packages that build.py packs into the release zip.  They
+# are other people's builds, redistributed unchanged, so they are not tracked
+# here -- drop the unmodified files into vendor/ before running build.py.
+/vendor/
+/gravity.steel_hunter_ability_helper.2.4.1.1.1.1.1.zip
+
 # Python caches
 __pycache__/
 *.pyo

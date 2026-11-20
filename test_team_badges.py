@@ -432,6 +432,23 @@ check('badge kept when results scope off', scoped.hasSelectedBadge is True,
       scoped.hasSelectedBadge)
 mod.CONFIG._values['scope.battleResults'] = True
 
+# A reopened report gets new visual blocks but reuses cached avatar data.
+record = resultFor(2)
+regular, suffix = reusableFor(), reusableFor(badge=0, suffixBadge=303)
+mod.CONFIG._values.update({'badges.exemptKnown': False, 'scope.inBattle': False})
+for stage, master, scope, visible in (
+        ('first open', True, True, False), ('scope off', True, False, True),
+        ('scope back on', True, True, False), ('master off', False, True, True)):
+    mod.CONFIG._values.update({'enable': master, 'scope.battleResults': scope})
+    icon, stats, strip = BadgeBlock(), RegularVehicleStatsBlock(), RegularVehicleStatsBlock()
+    icon.setRecord(record, regular)
+    stats.setRecord(record, regular)
+    strip.setRecord(record, suffix)
+    actual = (icon.icon, stats.hasSelectedBadge, getattr(stats.badge, 'badgeID', None),
+              strip.suffixBadgeIcon)
+    expected = ('THUMB_101', True, 101, 'strip_303') if visible else ('', False, None, None)
+    check(stage + ': reopened team stats', actual == expected, (actual, expected))
+
 print()
 print('=' * 62)
 print('PASS %d   FAIL %d' % (len(PASS), len(FAIL)))

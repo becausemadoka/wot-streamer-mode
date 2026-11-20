@@ -4,7 +4,9 @@
 
 在战斗中**匿名化其他玩家的昵称**，避免直播时把路人 ID 播出去。好友、军团战友、组队队友和你自己保留真实昵称。
 
-本插件是《战舰世界》[AndrewTaro/StreamerMode](https://github.com/AndrewTaro/StreamerMode) 同款思路在《坦克世界》上的移植。坦克世界此前**没有**同类插件——Wargaming 官方的「匿名功能」方向正好相反（是隐藏**你自己**的名字、在服务端生效、给别人看），而 WoT mod 圈围绕它做的多是反方向的「还原真名」工具。本插件是第一个在你自己的画面上隐藏**其他所有人**昵称的插件。
+本插件是《战舰世界》[AndrewTaro/StreamerMode](https://github.com/AndrewTaro/StreamerMode) 同款思路在《坦克世界》上的移植。坦克世界此前没有同类插件——Wargaming 官方的「匿名功能」方向正好相反（隐藏**你自己**的名字、在服务端生效、给别人看），而 WoT mod 圈围绕它做的多是反方向的「还原真名」工具。本插件在你的画面上隐藏**其他玩家**的昵称。
+
+> 它覆盖战斗流程中的主要界面，但不保证所有界面、所有情况下都隐藏身份。具体例外见下方「隐私边界」。
 
 ## 效果
 
@@ -18,7 +20,7 @@
     好友真名      [队友] (Bat.-Châtillon) <- 好友
 ```
 
-同一个人在**所有界面**里都是同一个编号——玩家面板、小地图、伤害记录、击杀提示、3D 战车标记、阵亡回放面板、TAB 全屏战绩——所以画面读起来依然自然。
+同一个人在**已覆盖的界面**里都是同一个编号——玩家面板、小地图、伤害记录、击杀提示、3D 战车标记、阵亡回放面板、TAB 全屏战绩——所以画面读起来依然自然。
 
 也可以设置 `"mode": "blank"`，直接显示空白而不是编号。
 
@@ -49,21 +51,29 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 
 ## 安装
 
-把 **`build/akemi.streamermode_1.0.wotmod`** 复制到：
+从 [Releases](https://github.com/becausemadoka/wot-streamer-mode/releases) 下载 **`akemi.streamermode_1.0.2.zip`**（本地构建时位于 `build/`）。里面有三个 `.wotmod` 和一个 `THIRD-PARTY-NOTICE.txt`：
+
+| 文件 | 作用 |
+|---|---|
+| `akemi.streamermode_1.0.2.wotmod` | 插件本体 |
+| `aslain.modmenu_2.1.15.wotmod` | 游戏内设置菜单（依赖） |
+| `net.openwg.gameface_1.2.2.wotmod` | Mod Menu 需要的运行环境 |
+
+把**这三个 `.wotmod` 一起**解压到：
 
 ```
 <游戏目录>/mods/<客户端版本>/
 ```
 
-就这样。**不改动 `res_mods` 里的任何东西**，所以游戏更新替换脚本时不会留下失效的覆盖文件。
-
 > `mods/` 下的目录名必须与客户端当前版本一致（可从 `res/version.xml` 查看）。放进版本不匹配的目录，游戏不会加载它。
+
+只复制插件本体、不带上另外两个，插件仍然会运行并匿名化昵称，但你只能编辑配置文件，没有图形设置页面。三个文件都是**原样分发**。其中 Mod Menu 和 Gameface 是第三方作品，不适用本项目自己的 MIT 声明；Mod Menu 的源码仓库采用 MIT，但其包内 NOTICE 明确说明该 MIT 许可不覆盖构建出的包，只允许原样转发。两个上游项目的许可全文都收录在包内 `THIRD-PARTY-NOTICE.txt`。
+
+**不改动 `res_mods` 里的任何东西**，所以游戏更新替换脚本时不会留下失效的覆盖文件。
 
 ## 游戏内设置菜单
 
-插件会把自己注册进 **Aslain Mod Menu（基于 ModsSettingsAPI）**，在游戏内的模组设置里就能改，不用手动编辑文件。
-
-依赖（**可选**）：[ModsSettingsAPI](https://wgmods.net/2340/)（`izeberg.modssettingsapi`）。没装这个框架时插件**照常工作**，只是没有图形设置界面，改用下面的 JSON 配置。
+插件会把自己注册进 **Aslain Mod Menu**（基于 ModsSettingsAPI 的界面），在游戏内的模组设置里就能改，不用手动编辑文件。菜单本身随上面的发布包一起提供，不需要另外下载。
 
 菜单里提供的开关（中英文界面都会自动匹配）：
 
@@ -74,7 +84,7 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 | 保留真实昵称 | 自己、好友、军团战友、组队队友、同时隐藏军团标签、结算界面同时隐藏军团标签 |
 | 奖章（勋章） | 隐藏昵称旁的奖章、同时隐藏机器人奖章、认识的玩家保留奖章 |
 | 玩家资料窗口 | 查看单个玩家资料时显示真实昵称 |
-| 生效界面 | 战斗内界面、战后结算、玩家面板（Tab）、小地图、击杀/事件提示、战车标记、阵亡回放面板 |
+| 生效界面 | 战斗内界面、战后结算、玩家面板（两侧）、TAB 战绩面板、小地图、击杀/事件提示、战车标记、阵亡回放面板 |
 
 > 界面开关的改动会在**下一场战斗**生效（战斗中的名字列表已经生成）。
 
@@ -96,13 +106,14 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 | `exclude.divmateName` | `true` | 保留组队队友昵称 |
 | `hideClanTag` | `true` | 同时隐藏陌生人的军团标签 |
 | `hideResultsClanTag` | `true` | 结算界面也隐藏军团标签（该界面直读属性，需独立开关） |
-| `hideBadges` | `true` | 隐藏昵称旁的奖章 |
+| `hideBadges` | `true` | 仅在已开启匿名化的界面隐藏昵称旁的奖章。关闭 TAB 战绩或战后结算的界面开关时，该界面的奖章照常显示 |
 | `hideBotBadges` | `true` | 机器人奖章一并隐藏 |
 | `badges.exemptKnown` | `true` | 自己/好友/军团/组队保留奖章 |
 | `showRealNamesInProfile` | `true` | 查看单个玩家资料时显示真实昵称（设为 `false` 则该窗口也匿名） |
 | `scope.inBattle` | `true` | 战斗内界面 |
 | `scope.battleResults` | `true` | 战后结算界面 |
-| `scope.playersPanel` | `true` | 玩家面板（Tab） |
+| `scope.playersPanel` | `true` | 玩家面板（两侧信息栏，以及载入界面的队伍列表） |
+| `scope.tabPanel` | `true` | 局内按 TAB 打开的全屏战绩面板 |
 | `scope.minimap` | `true` | 小地图 |
 | `scope.messages` | `true` | 击杀/事件提示 |
 | `scope.markers` | `true` | 战车标记 |
@@ -131,12 +142,12 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 客户端跑的是 CPython 2.7 字节码，所以**必须用 2.7 编译**（3.x 编出来的 .pyc 游戏加载不了）。构建脚本会自动找 2.7：优先 `py -2.7`，找不到时可用环境变量 `WOT_PY27` 指定解释器路径。
 
 ```powershell
-python build.py          # 用 Python 2.7 编译并打包 .wotmod
+python build.py          # 用 Python 2.7 编译并打包 .wotmod + .zip
 py -2.7 test_mod.py          # 行为测试（19 项）
 py -2.7 test_real_client.py  # 对客户端真实类测试（13 项）
 py -2.7 test_loader.py       # 模拟客户端 mod 加载器（9 项）
 py -2.7 test_package.py      # 包结构可被游戏加载（8 项）
-py -2.7 test_settings.py     # 设置菜单集成（51 项）
+py -2.7 test_settings.py     # 设置菜单集成（52 项）
 py -2.7 test_tab_panel.py    # TAB 面板 + 军团标签（18 项）
 py -2.7 test_identity.py     # 身份识别/自己不被匿名（13 项）
 py -2.7 test_bots.py         # 官方机器人前缀（18 项）
@@ -144,10 +155,13 @@ py -2.7 test_bot_numbering.py   # 机器人编号唯一且一致（12 项）
 py -2.7 test_tab_bot_numbers.py # TAB 与面板编号一致（13 项）
 py -2.7 test_results_numbers.py # 结算界面与面板编号一致（17 项）
 py -2.7 test_profile_clan.py # 结算军团隐藏 + 资料页开关（18 项）
-py -2.7 test_badges.py       # 奖章隐藏（27 项）
-py -2.7 test_team_badges.py  # 团队战绩奖章隐藏（17 项）
-py -2.7 test_results.py      # 结算界面机器人/玩家区分（25 项）
+py -2.7 test_badges.py       # 奖章隐藏（43 项）
+py -2.7 test_team_badges.py  # 团队战绩奖章隐藏（21 项）
+py -2.7 test_results.py      # 结算界面机器人/玩家区分（30 项）
 py -2.7 test_prefix_language.py # 昵称前缀跟随客户端语言（18 项）
+py -2.7 test_surface_switches.py # 各界面开关与异常隔离（113 项）
+py -2.7 test_review_findings.py  # 复查问题回归（22 项）
+py -2.7 test_internal_artifact.py # 内部版版本锁（19 项）
 ```
 
 `test_real_client.py` / `test_package.py` / `refresh_fixtures.py` 需要读客户端文件，运行前把 `WOT_GAME` 指向你的游戏目录：
@@ -171,8 +185,25 @@ set WOT_GAME=D:\Games\World_of_Tanks_XX
 * **只影响你自己的客户端**。别人看你仍是真名，除非对方也开了官方匿名功能。
 * 重点是战斗流程；车库、军团、聊天窗口未做处理。
 * 回放走的是同一套战斗逻辑，所以回放里的名字同样会被匿名化。
-* 战后结算只匿名化能对应到 DBID 的名字；对**游戏官方匿名功能已经改过**的玩家会刻意跳过，不覆盖官方的处理。
-* 设置菜单依赖 ModsSettingsAPI；没装时功能正常但没有图形界面。
+* 结算界面会对所有陌生人打码，**包括游戏官方匿名功能已经改过名字的玩家**——官方生成的假名同样是逐玩家的标识。被豁免的对象仍显示真实数据。
+* 设置菜单由发布包内附带的 Aslain Mod Menu 提供；只复制插件本体时不显示界面，需要改配置文件。
+
+### 隐私边界（请务必读完）
+
+这个插件**不保证**在所有情况下都隐藏身份。以下是明确不予隐藏、或可能显示原文的情况：
+
+| 场景 | 行为 | 原因 |
+|---|---|---|
+| **右键查看单个玩家资料** | **默认显示真实昵称与军团** | 查证/举报是主动行为，由 `showRealNamesInProfile` 控制，默认开 |
+| 客户端找不到某个显示函数 | 该处保留原文 | 客户端版本更新改名时，插件只停用那一个钩子，不会强行改写 |
+| 钩子内部抛异常 | 该处按“安全方向”处理（名字清空/奖章保留） | 宁可少显示，但无法保证覆盖所有界面 |
+| 你自己的名字 | 始终显示真名 | 这是设计目标 |
+| 好友 / 军团战友 / 组队队友 | 始终显示真名 | 可通过 `exclude.*` 关闭 |
+| 游戏官方匿名功能已处理的玩家 | 仍会被本插件替换为编号 | 但官方本身的匿名效果不受影响 |
+| 聊天窗口、车库、军团界面 | 不做任何处理 | 本插件只覆盖战斗流程 |
+| 玩家面板的载入界面与局内两侧栏 | **共用一个开关，同时生效或同时失效** | 客户端把载入时写入的行沿用到战斗中，拆成两个开关会出现一半打码、一半真名 |
+
+如果你需要“任何界面都不出现真名”，请把 `showRealNamesInProfile` 设为 `false`，并注意上表中“钩子缺失”一类情况仍可能保留原文——这是客户端兼容性问题，本插件会记录日志而不是静默失败。
 
 ## 排查
 

@@ -47,7 +47,7 @@ MOD_LINKAGE = 'akemi.streamermode'
 # so leaving this at 1 meant every update was silently DISCARDED and the menu
 # kept rendering the first template it ever saw.  Bump it and the new page is
 # picked up on the next launch.
-SETTINGS_VERSION = 4
+SETTINGS_VERSION = 7
 SETTINGS_KEY = 'settingsVersion'
 
 # Maps a settings-page variable name <-> our config key.
@@ -70,6 +70,7 @@ VAR_TO_KEY = {
     'scopeBattle': 'scope.inBattle',
     'scopeResults': 'scope.battleResults',
     'scopePanel': 'scope.playersPanel',
+    'scopeTab': 'scope.tabPanel',
     'scopeMinimap': 'scope.minimap',
     'scopeMessages': 'scope.messages',
     'scopeMarkers': 'scope.markers',
@@ -137,7 +138,8 @@ TEXTS = {
         'sectionScope': 'Screens to anonymise',
         'scopeBattle': 'Battle HUD',
         'scopeResults': 'Post-battle results',
-        'scopePanel': 'Players panel (Tab)',
+        'scopePanel': 'Players panel (loading + side panels)',
+        'scopeTab': 'TAB full-stats board',
         'scopeMinimap': 'Minimap',
         'scopeMessages': 'Kill / event messages',
         'scopeMarkers': 'Vehicle markers',
@@ -181,7 +183,8 @@ TEXTS = {
         'sectionScope': '生效界面',
         'scopeBattle': '战斗内界面',
         'scopeResults': '战后结算',
-        'scopePanel': '玩家面板(Tab)',
+        'scopePanel': '玩家面板(载入+两侧)',
+        'scopeTab': 'TAB 战绩面板',
         'scopeMinimap': '小地图',
         'scopeMessages': '击杀/事件提示',
         'scopeMarkers': '战车标记',
@@ -319,6 +322,7 @@ def buildTemplate():
                 templates.createCheckbox(_t('scopeBattle'), 'scopeBattle', True),
                 templates.createCheckbox(_t('scopeResults'), 'scopeResults', True),
                 templates.createCheckbox(_t('scopePanel'), 'scopePanel', True),
+                templates.createCheckbox(_t('scopeTab'), 'scopeTab', True),
                 templates.createCheckbox(_t('scopeMinimap'), 'scopeMinimap', True),
                 templates.createCheckbox(_t('scopeMessages'), 'scopeMessages', True),
                 templates.createCheckbox(_t('scopeMarkers'), 'scopeMarkers', True),
@@ -375,6 +379,7 @@ def _defaultsFromConfig(config):
         'scopeBattle': flag('scope.inBattle'),
         'scopeResults': flag('scope.battleResults'),
         'scopePanel': flag('scope.playersPanel'),
+        'scopeTab': flag('scope.tabPanel'),
         'scopeMinimap': flag('scope.minimap'),
         'scopeMessages': flag('scope.messages'),
         'scopeMarkers': flag('scope.markers'),
@@ -428,27 +433,45 @@ class SettingsPage(object):
                 except Exception:
                     saved = None
 
-            # A previously saved state may predate the current template (we added
-            # the bot controls in a later version).  If any control is missing
-            # from it, re-send the template so the new fields actually appear;
-            # otherwise the page would silently keep showing the OLD layout.
+            # A saved page may predate the current template in two ways:
+            #   * new controls appeared        (variable added)
+            #   * existing controls were RENAMED (same varName, new label)
+            # The framework reuses the template it stored, so a rename is
+            # invisible unless we force a re-registration -- which is why the
+            # renamed "Players panel (Tab)" kept showing its old text.
+            #
+            # SETTINGS_VERSION is stamped into the template and echoed back in
+            # `saved`, so bumping it is the reliable trigger.  The variable-set
+            # check stays as a second net for an old saved page that has no
+            # version stamp at all.
             templateVars = set()
             for column in ('column1', 'column2'):
                 for control in template.get(column, []):
                     var = control.get('varName')
                     if var:
                         templateVars.add(var)
+
             savedVars = set(saved.keys()) if isinstance(saved, dict) else set()
-            stale = bool(saved is not None and (templateVars - savedVars))
+            added = templateVars - savedVars
+            savedVersion = None
+            if isinstance(saved, dict):
+                savedVersion = saved.get(SETTINGS_KEY)
+            versionChanged = bool(savedVersion is not None
+                                  and savedVersion != SETTINGS_VERSION)
+
+            stale = bool(saved is not None and (added or versionChanged))
 
             if saved is not None and not stale:
                 # already registered once: just attach our callback
                 g_modsSettingsApi.registerCallback(MOD_LINKAGE, self._onChanged)
                 settings = saved
             else:
-                if stale:
-                    _logInfo('settings template changed, re-registering '
-                             '(new: %s)' % ', '.join(sorted(templateVars - savedVars)))
+                if added:
+                    _logInfo('settings template gained controls: %s'
+                             % ', '.join(sorted(added)))
+                if versionChanged:
+                    _logInfo('settings template version %s -> %s, re-registering'
+                             % (savedVersion, SETTINGS_VERSION))
                 settings = setter(MOD_LINKAGE, template, self._onChanged)
 
             # apply the starting values ourselves; mark it as the initial load

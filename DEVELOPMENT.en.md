@@ -42,13 +42,19 @@ StreamerModeWoT/
 ## Build
 
 ```powershell
-python build.py          # -> build/akemi.streamermode_<game-version>.wotmod
+python build.py          # -> build/akemi.streamermode_<version>.wotmod + .zip
 python build_internal.py # -> dist_internal/ (version-locked test build)
 ```
 
 `build.py` self-checks the result: every entry STORED, `meta.xml` valid XML,
 `.pyc` magic correct, and the entry points present. Any failure aborts the
 build, so a broken package cannot be produced silently.
+
+The full release zip also needs two third-party packages placed unchanged in
+`vendor/`: `aslain.modmenu_2.1.15.wotmod` and
+`net.openwg.gameface_1.2.2.wotmod`. They are deliberately not committed; fetch
+them from their upstream release pages. `build.py` fails with a clear error if
+they are missing.
 
 `build_internal.py` copies the sources, fills in `TARGET_VERSION`, compiles and
 packages. A locked build refuses to run on any other client version: `init()`
@@ -69,15 +75,18 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 | `test_bot_numbering.py` | 12 | each bot gets a distinct, stable number |
 | `test_tab_panel.py` | 18 | TAB full-stats panel + clan tags |
 | `test_tab_bot_numbers.py` | 13 | TAB and in-battle numbers agree |
-| `test_results.py` | 25 | post-battle scoreboard: bots vs players, exemptions |
+| `test_results.py` | 30 | post-battle scoreboard: bots vs players, exemptions |
 | `test_results_numbers.py` | 17 | results numbering matches battle |
-| `test_team_badges.py` | 17 | team-stats badges hidden |
+| `test_team_badges.py` | 21 | team-stats badges hidden |
 | `test_profile_clan.py` | 18 | results clan hiding + profile switch |
-| `test_badges.py` | 27 | badge hiding (battle / bots / exemption / master switch) |
+| `test_badges.py` | 43 | badge hiding (battle / bots / exemption / master switch) |
 | `test_prefix_language.py` | 18 | prefix follows the client language |
-| `test_settings.py` | 51 | settings registration, version bump, callback arity |
+| `test_settings.py` | 52 | settings registration, version bump, callback arity |
+| `test_surface_switches.py` | 113 | per-surface switches, failure isolation and restore |
+| `test_review_findings.py` | 22 | regressions for review findings |
 | `test_loader.py` | 9 | simulates the client's mod loader |
 | `test_package.py` | 8 | replicates the loader's package checks |
+| `test_internal_artifact.py` | 19 | version-locked build and artifact checks |
 | `test_version_lock.py` | 38 | version-lock machinery |
 
 After a client patch, refresh the fixtures **first**, or the tests validate the
@@ -202,5 +211,6 @@ Logs live in `<game>/game.log`. Filter for `[StreamerMode]`.
 - Only affects **your own client**; other players still see real names.
 - Scoped to battle; hangar, clan and chat windows are untouched.
 - Replays use the same battle path, so names are anonymised there too.
-- The results screen leaves alone players the game's own anonymiser already
-  renamed.
+- The results screen labels every stranger, including players the game's own
+  anonymiser already renamed; a native fake name is still a per-player
+  identifier. Exempted players keep their real data.
