@@ -1470,10 +1470,47 @@ def _hookDisplayedName(original):
     individual switches.
     """
 
+    def _isVehicleName(self, name):
+        """True when `name` is the tank label rather than a nickname.
+
+        The marker plugin asks for the vehicle label with
+        `vInfo.getDisplayedName(nameParts.vehicleName)`, where vehicleName is
+        either `shortNameWithPrefix` or `name`.  Treating that argument as a
+        nickname hid the vehicle model above every tank.
+        """
+        try:
+            vehType = getattr(self, 'vehicleType', None)
+            if vehType is None:
+                return False
+            for attr in ('shortNameWithPrefix', 'shortName', 'name'):
+                value = getattr(vehType, attr, None)
+                if value and value == name:
+                    return True
+        except Exception:
+            pass
+        return False
+
     def getDisplayedName(self, name=None):
         if name is None:
             return original(self, name)          # tank name, not a nickname
         try:
+            try:
+                caller = sys._getframe(1).f_code.co_name
+            except Exception:
+                caller = None
+
+            # VehicleMarkerPlugin._getVehicleName passes the tank label here.
+            # It must never be anonymised, or the 3D marker loses its vehicle
+            # model while keeping the player label.
+            if caller == '_getVehicleName':
+                return original(self, name)
+
+            # PlayerFullNameFormatter.format is the nickname path.  Do not use
+            # the vehicle-name fallback there: a player whose nickname happens
+            # to equal a tank name must still be masked.
+            if caller != 'format' and _isVehicleName(self, name):
+                return original(self, name)
+
             playerVO = getattr(self, 'player', None)
             if playerVO is not None and CONFIG.surfaceAllowed():
                 if _isBot(playerVO):

@@ -19,7 +19,7 @@ MOD_NAME = 'akemi.streamermode'
 # with where the file is installed: the client loads a package from whatever
 # mods/<client version>/ folder the player puts it in, and reads the identity
 # from meta.xml, not from the filename.
-MOD_VERSION = '1.0.2'
+MOD_VERSION = '1.0.3'
 
 # Third-party packages shipped alongside the mod so the in-game settings menu
 # works without the player hunting for dependencies.  Each entry is

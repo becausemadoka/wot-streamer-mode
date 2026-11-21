@@ -4,16 +4,13 @@ Streamer Mode anonymises strangers' nicknames during a battle, so a live stream
 does not broadcast other people's identities. Friends, clanmates, platoon mates
 and yourself keep their real names.
 
-Every stranger becomes a stable label that stays the same for the whole battle,
-e.g. Player_001 [ENEMY] (T-34-85). The number is per-battle and consistent, so
-the scoreboard still reads naturally. Official bots get their own prefix and
-counter, Bot_001.
+Labels stay stable for each battle (Player_001). Official bots use a separate
+counter (Bot_001).
 
 Covered: players panel, minimap, damage log, kill and event messages, 3D markers,
 death-cam panel, the TAB full-stats page, and both scoreboards after the battle.
 
-Only the text the client draws is changed, never stored game data, so a bug
-cannot corrupt your account or the battle, and removing the mod restores names.
+Only displayed names and badges change. Removing the mod restores the original display.
 
 On a Chinese client strangers show 玩家_001 instead of Player_001. Other
 languages keep Player_. The prefix is fully configurable.
@@ -54,10 +51,10 @@ It does NOT guarantee every identity is hidden everywhere. Exceptions:
 
 INSTALL
 
-Extract all three .wotmod files into <game folder>/mods/<client version>/
-(see res/version.xml):
+Install all three files in <game>/mods/<client version>/
+(see <game>/version.xml):
 
-  akemi.streamermode_1.0.2.wotmod   the mod
+  akemi.streamermode_1.0.3.wotmod   the mod
   aslain.modmenu_2.1.15.wotmod      the settings menu
   net.openwg.gameface_1.2.2.wotmod  runtime the menu needs
 

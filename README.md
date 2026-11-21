@@ -51,11 +51,11 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 
 ## 安装
 
-从 [Releases](https://github.com/becausemadoka/wot-streamer-mode/releases) 下载 **`akemi.streamermode_1.0.2.zip`**（本地构建时位于 `build/`）。里面有三个 `.wotmod` 和一个 `THIRD-PARTY-NOTICE.txt`：
+从 [Releases](https://github.com/becausemadoka/wot-streamer-mode/releases) 下载 **`akemi.streamermode_1.0.3.zip`**（本地构建时位于 `build/`）。里面有三个 `.wotmod` 和一个 `THIRD-PARTY-NOTICE.txt`：
 
 | 文件 | 作用 |
 |---|---|
-| `akemi.streamermode_1.0.2.wotmod` | 插件本体 |
+| `akemi.streamermode_1.0.3.wotmod` | 插件本体 |
 | `aslain.modmenu_2.1.15.wotmod` | 游戏内设置菜单（依赖） |
 | `net.openwg.gameface_1.2.2.wotmod` | Mod Menu 需要的运行环境 |
 
@@ -65,7 +65,7 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 <游戏目录>/mods/<客户端版本>/
 ```
 
-> `mods/` 下的目录名必须与客户端当前版本一致（可从 `res/version.xml` 查看）。放进版本不匹配的目录，游戏不会加载它。
+> `mods/` 下的目录名必须与客户端当前版本一致（可从 `<游戏目录>/version.xml` 查看）。放进版本不匹配的目录，游戏不会加载它。
 
 只复制插件本体、不带上另外两个，插件仍然会运行并匿名化昵称，但你只能编辑配置文件，没有图形设置页面。三个文件都是**原样分发**。其中 Mod Menu 和 Gameface 是第三方作品，不适用本项目自己的 MIT 声明；Mod Menu 的源码仓库采用 MIT，但其包内 NOTICE 明确说明该 MIT 许可不覆盖构建出的包，只允许原样转发。两个上游项目的许可全文都收录在包内 `THIRD-PARTY-NOTICE.txt`。
 
@@ -143,7 +143,7 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 
 ```powershell
 python build.py          # 用 Python 2.7 编译并打包 .wotmod + .zip
-py -2.7 test_mod.py          # 行为测试（19 项）
+py -2.7 test_mod.py          # 行为测试（22 项）
 py -2.7 test_real_client.py  # 对客户端真实类测试（13 项）
 py -2.7 test_loader.py       # 模拟客户端 mod 加载器（9 项）
 py -2.7 test_package.py      # 包结构可被游戏加载（8 项）

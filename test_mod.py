@@ -241,9 +241,37 @@ check('numbers are stable', stranger.getPlayerLabel() == 'Player_001'
 vStranger = VehicleArenaInfoVO(vehicleID=10, player=stranger)
 check('getDisplayedName() no-arg = tank name, untouched',
       vStranger.getDisplayedName() == 'T-34-85', vStranger.getDisplayedName())
+check('getDisplayedName(vehicle short name) untouched',
+      vStranger.getDisplayedName('T-34-85') == 'T-34-85',
+      vStranger.getDisplayedName('T-34-85'))
 check('getDisplayedName(nick) anonymised',
       vStranger.getDisplayedName('NoobKiller') == 'Player_001',
       vStranger.getDisplayedName('NoobKiller'))
+
+
+def _getVehicleName(vInfo, nameParts):
+    """Mirror of VehicleMarkerPlugin._getVehicleName."""
+    return vInfo.getDisplayedName(nameParts.vehicleName)
+
+
+class _NameParts(object):
+    vehicleName = 'T-34-85'
+
+
+check('marker vehicle name stays intact',
+      _getVehicleName(vStranger, _NameParts()) == 'T-34-85',
+      _getVehicleName(vStranger, _NameParts()))
+
+# A nickname equal to a tank name must still be masked when it comes through
+# the player-name path, otherwise the vehicle-name exception would leak it.
+tankNamedVO = PlayerInfoVO(accountDBID=78, avatarSessionID='s78',
+                           name='T-34-85', clanAbbrev='')
+vTankNamed = VehicleArenaInfoVO(vehicleID=13, player=tankNamedVO)
+check('player named like a tank still masked on the name path',
+      vTankNamed.getDisplayedName(tankNamedVO.getPlayerLabel()).startswith(
+          'Player_'),
+      vTankNamed.getDisplayedName(tankNamedVO.getPlayerLabel()))
+
 vBot = VehicleArenaInfoVO(vehicleID=11, player=botVO)
 # bots are labelled with the bot prefix (see test_bot_numbering.py); this bot
 # already got Bot_001 above, so the same object must keep that exact label

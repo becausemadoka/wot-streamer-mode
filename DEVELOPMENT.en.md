@@ -60,6 +60,24 @@ they are missing.
 packages. A locked build refuses to run on any other client version: `init()`
 returns before installing a single hook and logs one `DISABLED` line.
 
+## Publishing
+
+The GitHub MCP connector only exposes repo / PR / issue tools. Creating a
+Release and uploading assets needs a token with `contents: write` against the
+REST API, so the repo ships a small script:
+
+```powershell
+$env:GH_TOKEN = 'github_pat_xxx'   # fine-grained token, Contents: read + write
+python publish_release.py --notes-file notes.md [--clobber]
+```
+
+It reads `MOD_VERSION` from `build.py` and operates on tag `v<version>` plus
+`build/akemi.streamermode_<version>.zip` by default: it creates the Release or
+updates its title / body, and only replaces an existing asset when `--clobber`
+is passed. The tag must exist locally (otherwise GitHub would tag the default
+branch), which the script checks first. The token is read from the environment
+and never written to disk.
+
 ## Test suite
 
 ```powershell
@@ -68,7 +86,7 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 
 | File | Checks | What it verifies |
 |---|---|---|
-| `test_mod.py` | 19 | hook assumptions against real class shapes (main regression) |
+| `test_mod.py` | 22 | hook assumptions against real class shapes (main regression) |
 | `test_real_client.py` | 13 | loads **real client classes** from fixtures and runs the hooks |
 | `test_identity.py` | 13 | self / friends / clan / platoon detection |
 | `test_bots.py` | 18 | bot prefix handling |

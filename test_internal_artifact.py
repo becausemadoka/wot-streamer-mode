@@ -20,7 +20,7 @@ import imp
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WOTMOD = os.path.join(HERE, 'dist_internal', 'mods', '2.4.1.0',
-                      'akemi.streamermode_1.0.2.wotmod')
+                      'akemi.streamermode_1.0.3.wotmod')
 
 PASS, FAIL = [], []
 

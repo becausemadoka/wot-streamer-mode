@@ -54,6 +54,22 @@ python build_internal.py # -> dist_internal/（锁定版本的内部测试版）
 其他客户端版本上会拒绝运行：`init()` 在安装任何钩子之前就返回，只写一行
 `DISABLED` 日志。
 
+## 发布
+
+GitHub 的 MCP 连接器只有仓库 / PR / issue 类工具，建 Release 和传附件需要
+带 `contents: write` 的 token 直连 REST API，所以仓库里带了一个小脚本：
+
+```powershell
+$env:GH_TOKEN = 'github_pat_xxx'   # fine-grained token，Contents: read + write
+python publish_release.py --notes-file notes.md [--clobber]
+```
+
+脚本从 `build.py` 读 `MOD_VERSION`，默认操作 tag `v<版本>` 和
+`build/akemi.streamermode_<版本>.zip`：Release 不存在就新建，存在就更新
+标题 / 正文；附件已存在时需加 `--clobber` 才会覆盖。tag 必须先在本地存在
+（否则 GitHub 会把 Release 建在默认分支上），脚本会提前拦下。token 只从
+环境变量读取，不落盘。
+
 ## 测试套件
 
 ```powershell
@@ -62,7 +78,7 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 
 | 文件 | 项数 | 验证什么 |
 |---|---|---|
-| `test_mod.py` | 19 | 对真实类形状的钩子假设（主回归） |
+| `test_mod.py` | 22 | 对真实类形状的钩子假设（主回归） |
 | `test_real_client.py` | 13 | 加载**真实客户端类**（fixture）并跑钩子 |
 | `test_identity.py` | 13 | 自己 / 好友 / 军团 / 组队 的身份判定 |
 | `test_bots.py` | 18 | 机器人前缀处理 |

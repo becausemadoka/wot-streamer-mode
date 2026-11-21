@@ -67,14 +67,14 @@ in-game menu, your value always wins.
 
 ## Install
 
-Download **`akemi.streamermode_1.0.2.zip`** from
+Download **`akemi.streamermode_1.0.3.zip`** from
 [Releases](https://github.com/becausemadoka/wot-streamer-mode/releases)
 (`build/` when built locally). It holds three `.wotmod` packages and a
 `THIRD-PARTY-NOTICE.txt`:
 
 | File | Purpose |
 |---|---|
-| `akemi.streamermode_1.0.2.wotmod` | the mod itself |
+| `akemi.streamermode_1.0.3.wotmod` | the mod itself |
 | `aslain.modmenu_2.1.15.wotmod` | the in-game settings menu (dependency) |
 | `net.openwg.gameface_1.2.2.wotmod` | runtime Mod Menu requires |
 
@@ -85,7 +85,7 @@ Extract **all three `.wotmod` files together** into:
 ```
 
 > The folder under `mods/` must match the client's current version (see
-> `res/version.xml`). The game will not load a package from a mismatched folder.
+> `<game>/version.xml`). The game will not load a package from a mismatched folder.
 
 With only the mod itself and not the other two, it still runs and still
 anonymises nicknames, but you get no GUI and have to edit the config file. All
@@ -181,7 +181,7 @@ you need to point at a specific interpreter.
 
 ```powershell
 python build.py          # compile with Python 2.7 + package .wotmod/.zip
-py -2.7 test_mod.py          # behaviour (19 checks)
+py -2.7 test_mod.py          # behaviour (22 checks)
 py -2.7 test_real_client.py  # against the REAL client classes (13)
 py -2.7 test_loader.py       # client mod-loader simulation (9)
 py -2.7 test_package.py      # package is loadable by the game (8)
