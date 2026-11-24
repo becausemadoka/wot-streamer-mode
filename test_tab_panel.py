@@ -354,6 +354,31 @@ check('panel: clan kept when hideClanTag=false', d3.get('clanAbbrev') == 'KEEPCL
 mod.CONFIG._values['hideClanTag'] = True
 
 print()
+print('=== TAB: ally and enemy prefixes are separate ===')
+mod.CONFIG._values['namePrefix'] = ''
+mod.CONFIG._values['allyPrefix'] = ''
+mod.CONFIG._values['enemyPrefix'] = ''
+mod.ANONYMISER.reset()
+teamView = TabView({
+    401: {'accountDBID': 401, 'avatarSessionID': 's401', 'name': 'TeamAlly',
+          'fakeName': '', 'clanAbbrev': '', 'team': 1},
+    402: {'accountDBID': 402, 'avatarSessionID': 's402', 'name': 'TeamEnemy',
+          'fakeName': '', 'clanAbbrev': '', 'team': 2},
+})
+teamView._invalidateVehiclesInfo()
+teamAllyModel = teamView.viewModel.playerList.getAllies()[0]
+teamEnemyModel = teamView.viewModel.playerList.getEnemies()[0]
+check('TAB: ally uses Ally_', teamAllyModel.getUserName().startswith('Ally_'),
+      teamAllyModel.getUserName())
+check('TAB: enemy uses Enemy_',
+      teamEnemyModel.getUserName().startswith('Enemy_'),
+      teamEnemyModel.getUserName())
+teamView._invalidatePersonalInfo(teamEnemyModel)
+check('TAB: personal refresh keeps the enemy label',
+      teamEnemyModel.getUserName() == 'Enemy_001',
+      teamEnemyModel.getUserName())
+
+print()
 print('=== uninstall restores both paths ===')
 mod.fini()
 fresh = TabView({301: {'accountDBID': 970, 'avatarSessionID': 's970',

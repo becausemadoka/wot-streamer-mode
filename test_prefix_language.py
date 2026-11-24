@@ -34,11 +34,12 @@ def check(name, cond, detail=''):
 # ------------------------------------------------------------------ stubs --
 class PlayerInfoVO(object):
     def __init__(self, accountDBID=None, avatarSessionID=None, name='',
-                 clanAbbrev=''):
+                 clanAbbrev='', team=None):
         self.accountDBID = accountDBID
         self.avatarSessionID = avatarSessionID
         self.name = name
         self.clanAbbrev = clanAbbrev
+        self.team = team
 
     @property
     def isBot(self):
@@ -52,9 +53,10 @@ class PlayerInfoVO(object):
 
 
 class VehicleArenaInfoVO(object):
-    def __init__(self, vehicleID=0, player=None):
+    def __init__(self, vehicleID=0, player=None, team=None):
         self.vehicleID = vehicleID
         self.player = player
+        self.team = team
         self._p = 1
         self._s = 2
 
@@ -233,6 +235,87 @@ print('=== bot prefix is NOT localised ===')
 _lang_box['value'] = 'zh'
 check('bot prefix stays Bot_ on a zh client',
       mod.CONFIG.botPrefix() == 'Bot_', mod.CONFIG.botPrefix())
+
+print()
+print('=== ally / enemy prefixes ===')
+
+
+def _reset_prefixes():
+    mod.CONFIG._values['namePrefix'] = ''
+    mod.CONFIG._values['allyPrefix'] = ''
+    mod.CONFIG._values['enemyPrefix'] = ''
+
+
+_lang_box['value'] = 'en'
+_reset_prefixes()
+check('en ally default', mod.CONFIG.allyPrefix() == 'Ally_',
+      mod.CONFIG.allyPrefix())
+check('en enemy default', mod.CONFIG.enemyPrefix() == 'Enemy_',
+      mod.CONFIG.enemyPrefix())
+
+_lang_box['value'] = 'zh'
+check('zh ally default', mod.CONFIG.allyPrefix() == '友军_',
+      mod.CONFIG.allyPrefix())
+check('zh enemy default', mod.CONFIG.enemyPrefix() == '敌军_',
+      mod.CONFIG.enemyPrefix())
+
+_lang_box['value'] = 'en'
+mod.ANONYMISER.reset()
+ally1 = mod.ANONYMISER.displayForID(9001, 'AllyOne', team=1)
+enemy1 = mod.ANONYMISER.displayForID(9002, 'EnemyOne', team=2)
+ally2 = mod.ANONYMISER.displayForID(9003, 'AllyTwo', team=1)
+enemy2 = mod.ANONYMISER.displayForID(9004, 'EnemyTwo', team=2)
+check('ally labels use Ally_ and their own counter',
+      (ally1, ally2) == ('Ally_001', 'Ally_002'), (ally1, ally2))
+check('enemy labels use Enemy_ and their own counter',
+      (enemy1, enemy2) == ('Enemy_001', 'Enemy_002'), (enemy1, enemy2))
+check('same player keeps the same label',
+      mod.ANONYMISER.displayForID(9001, 'AllyOne', team=1) == 'Ally_001',
+      mod.ANONYMISER.displayForID(9001, 'AllyOne', team=1))
+
+_lang_box['value'] = 'zh'
+mod.ANONYMISER.reset()
+zhAlly = mod.ANONYMISER.displayForID(9101, 'A', team=1)
+zhEnemy = mod.ANONYMISER.displayForID(9102, 'B', team=2)
+check('zh ally label uses 友军_', zhAlly == '友军_001', zhAlly)
+check('zh enemy label uses 敌军_', zhEnemy == '敌军_001', zhEnemy)
+
+_lang_box['value'] = 'en'
+mod.CONFIG._values['allyPrefix'] = 'Friendly_'
+mod.CONFIG._values['enemyPrefix'] = 'Hostile_'
+mod.ANONYMISER.reset()
+check('explicit ally prefix wins',
+      mod.ANONYMISER.displayForID(9201, 'A', team=1) == 'Friendly_001')
+check('explicit enemy prefix wins',
+      mod.ANONYMISER.displayForID(9202, 'B', team=2) == 'Hostile_001')
+
+_reset_prefixes()
+mod.CONFIG._values['namePrefix'] = 'Legacy_'
+mod.ANONYMISER.reset()
+check('legacy namePrefix still applies to allies',
+      mod.ANONYMISER.displayForID(9301, 'A', team=1) == 'Legacy_001',
+      mod.ANONYMISER.displayForID(9301, 'A', team=1))
+check('legacy namePrefix still applies to enemies',
+      mod.ANONYMISER.displayForID(9302, 'B', team=2) == 'Legacy_001',
+      mod.ANONYMISER.displayForID(9302, 'B', team=2))
+
+_reset_prefixes()
+mod.ANONYMISER.reset()
+unknown = mod.ANONYMISER.displayForID(9401, 'A')
+check('unknown team falls back to the generic prefix',
+      unknown == 'Player_001', unknown)
+
+mod.ANONYMISER.reset()
+allyVO = PlayerInfoVO(accountDBID=9501, avatarSessionID='s9501',
+                      name='AllyVO', team=1)
+enemyVO = PlayerInfoVO(accountDBID=9502, avatarSessionID='s9502',
+                       name='EnemyVO', team=2)
+check('display() reads team from PlayerInfoVO',
+      mod.ANONYMISER.display(allyVO, 'AllyVO') == 'Ally_001',
+      mod.ANONYMISER.display(allyVO, 'AllyVO'))
+check('display() reads enemy team from PlayerInfoVO',
+      mod.ANONYMISER.display(enemyVO, 'EnemyVO') == 'Enemy_001',
+      mod.ANONYMISER.display(enemyVO, 'EnemyVO'))
 
 print()
 print('=' * 62)

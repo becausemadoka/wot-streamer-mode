@@ -6,17 +6,20 @@ Creating a Release and uploading assets needs the Releases REST API with a
 token that has ``contents: write``, so this script talks to the API directly.
 
 Usage:
-    set GH_TOKEN=ghp_xxx        # Windows PowerShell: $env:GH_TOKEN = 'ghp_xxx'
+    python publish_release.py --save-token
     python publish_release.py --notes-file notes.md
 
-Token is read from ``GH_TOKEN`` or ``GITHUB_TOKEN``; it is never written to
-disk. The tag must already exist locally, because creating a Release for a
-missing tag would make GitHub tag the default branch instead.
+The token is read from ``GH_TOKEN``/``GITHUB_TOKEN`` when set, otherwise from a
+DPAPI-encrypted file (default: ``%APPDATA%\\streamer-mode\\gh_token.dpapi``).
+Run ``--save-token`` once to store it. DPAPI means only the same Windows user
+can decrypt the file. The tag must already exist locally, because creating a
+Release for a missing tag would make GitHub tag the default branch instead.
 """
 
 from __future__ import print_function
 
 import argparse
+import getpass
 import json
 import os
 import re
@@ -33,6 +36,79 @@ except ImportError:  # pragma: no cover - Python 2 is not supported here
 API = 'https://api.github.com'
 UPLOADS = 'https://uploads.github.com'
 ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def default_token_file():
+    base = os.environ.get('APPDATA')
+    if not base:
+        base = os.path.join(os.path.expanduser('~'), '.config')
+    return os.path.join(base, 'streamer-mode', 'gh_token.dpapi')
+
+
+def _dpapi(data, protect):
+    """Run CryptProtectData/CryptUnprotectData for the current Windows user."""
+    if os.name != 'nt':
+        raise SystemExit('DPAPI token storage needs Windows; set GH_TOKEN instead')
+    import ctypes
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [('cbData', wintypes.DWORD),
+                    ('pbData', ctypes.POINTER(ctypes.c_char))]
+
+    crypt32 = ctypes.WinDLL('crypt32', use_last_error=True)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+    kernel32.LocalFree.restype = wintypes.HLOCAL
+
+    in_buf = ctypes.create_string_buffer(data, len(data))
+    in_blob = DATA_BLOB(len(data),
+                        ctypes.cast(in_buf, ctypes.POINTER(ctypes.c_char)))
+    out_blob = DATA_BLOB()
+    func = crypt32.CryptProtectData if protect else crypt32.CryptUnprotectData
+    func.argtypes = [ctypes.POINTER(DATA_BLOB), ctypes.c_void_p,
+                     ctypes.POINTER(DATA_BLOB), ctypes.c_void_p,
+                     ctypes.c_void_p, wintypes.DWORD,
+                     ctypes.POINTER(DATA_BLOB)]
+    func.restype = wintypes.BOOL
+    # CRYPTPROTECT_UI_FORBIDDEN: never show a DPAPI prompt during automation.
+    ok = func(ctypes.byref(in_blob), None, None, None, None, 0x1,
+              ctypes.byref(out_blob))
+    if not ok:
+        raise SystemExit('DPAPI failed: %s'
+                         % ctypes.WinError(ctypes.get_last_error()))
+    try:
+        return ctypes.string_at(out_blob.pbData, out_blob.cbData)
+    finally:
+        kernel32.LocalFree(out_blob.pbData)
+
+
+def save_token(path):
+    token = getpass.getpass('GitHub token (input hidden): ').strip()
+    if not token:
+        raise SystemExit('empty token; nothing saved')
+    blob = _dpapi(token.encode('utf-8'), True)
+    folder = os.path.dirname(path)
+    if folder and not os.path.isdir(folder):
+        os.makedirs(folder)
+    temp = path + '.tmp'
+    with open(temp, 'wb') as fh:
+        fh.write(blob)
+    os.replace(temp, path)
+    print('saved DPAPI token: %s' % path)
+
+
+def load_token(path):
+    token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    if token:
+        return token.strip()
+    if os.path.isfile(path):
+        with open(path, 'rb') as fh:
+            token = _dpapi(fh.read(), False).decode('utf-8').strip()
+        if token:
+            return token
+        raise SystemExit('DPAPI token file is empty: %s' % path)
+    raise SystemExit('no GitHub token: run `python publish_release.py --save-token`')
 
 
 def read_version():
@@ -95,11 +171,17 @@ def main(argv=None):
     parser.add_argument('--prerelease', action='store_true')
     parser.add_argument('--clobber', action='store_true',
                         help='replace an already uploaded asset')
+    parser.add_argument('--save-token', action='store_true',
+                        help='store a DPAPI-encrypted token and exit')
+    parser.add_argument('--token-file',
+                        help='DPAPI token file (default: %s)' % default_token_file())
     args = parser.parse_args(argv)
 
-    token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
-    if not token:
-        raise SystemExit('set GH_TOKEN (fine-grained token with Contents: read+write)')
+    token_file = args.token_file or default_token_file()
+    if args.save_token:
+        save_token(token_file)
+        return
+    token = load_token(token_file)
 
     version = read_version()
     repo = args.repo or default_repo()

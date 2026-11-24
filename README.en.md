@@ -21,16 +21,18 @@ hides other players' names on your own screen.
 In battle, every stranger's nickname becomes a stable per-battle label:
 
 ```
-    Player_001   [ENEMY] (T-34-85)
-    Player_002   [FOE]   (IS-3)
+    Ally_001             (T-34-85)
+    Enemy_001            (IS-3)
     Bot_001              (T-54)             <- official bot, own prefix
     MyRealName   [CLAN]  (Object 277)       <- you
     BuddyName    [ALLY]  (Bat.-Châtillon)   <- friend
 ```
 
-The same stranger keeps the same number on **every covered surface** — players
-panel, minimap, damage log, kill messages, 3D markers, postmortem panel, TAB
-full-stats — so the layout still reads naturally.
+Allies and enemies get **separate prefixes and counters**: ally labels start at
+`Ally_001`, enemy labels at `Enemy_001`. The same stranger keeps the same
+number on **every covered surface** — players panel, minimap, damage log, kill
+messages, 3D markers, postmortem panel, TAB full-stats — so the layout still
+reads naturally.
 
 You can also set `"mode": "blank"` to show nothing at all instead of a label.
 
@@ -52,7 +54,7 @@ they get their own prefix and their own counter by default:
 | `botMode` | result |
 |---|---|
 | `botLabel` (default) | `Bot_001`, `Bot_002`, … counted separately from players |
-| `label` | share the player numbering (`Player_001`) |
+| `label` | share the player numbering (generic player prefix, `Player_001`) |
 | `keep` | leave the game's own bot name |
 | `blank` | hide it |
 
@@ -61,21 +63,26 @@ The prefix is independent of the player prefix: set `botPrefix` to `机器人_` 
 
 ### The prefix follows the client language
 
-The default prefix tracks the client UI language: `玩家_001` on a Chinese client,
-`Player_001` elsewhere. Once you set a prefix yourself in the config file or the
-in-game menu, your value always wins.
+The default prefix tracks both the client UI language and the team:
+`友军_001` / `敌军_001` on a Chinese client, `Ally_001` / `Enemy_001`
+elsewhere. Once you set a prefix yourself in the config file or the in-game
+menu, your value always wins.
+
+The old `namePrefix` key is still honoured: leave it empty to use the team
+defaults above; a custom value acts as a shared fallback for both teams until
+you set `allyPrefix` / `enemyPrefix` separately.
 
 ## Install
 
-Download **`akemi.streamermode_1.0.3.zip`** from
+Download **`akemi.streamermode_1.0.4.zip`** from
 [Releases](https://github.com/becausemadoka/wot-streamer-mode/releases)
 (`build/` when built locally). It holds three `.wotmod` packages and a
 `THIRD-PARTY-NOTICE.txt`:
 
 | File | Purpose |
 |---|---|
-| `akemi.streamermode_1.0.3.wotmod` | the mod itself |
-| `aslain.modmenu_2.1.15.wotmod` | the in-game settings menu (dependency) |
+| `akemi.streamermode_1.0.4.wotmod` | the mod itself |
+| `aslain.modmenu_2.1.16.wotmod` | the in-game settings menu (dependency) |
 | `net.openwg.gameface_1.2.2.wotmod` | runtime Mod Menu requires |
 
 Extract **all three `.wotmod` files together** into:
@@ -108,7 +115,7 @@ The menu provides (labels follow the client language):
 
 | Group | Items |
 |---|---|
-| General | master switch, how to hide a nickname (label/blank), player prefix |
+| General | master switch, how to hide a nickname (label/blank), ally prefix, enemy prefix |
 | Bots | how to show bots, bot prefix, hide bot clan tags |
 | Keep real names for | yourself, friends, clanmates, platoon mates, also hide clan tags, also hide clan tags on the results screen |
 | Badges (medals) | hide badges next to nicknames, also hide bot badges, keep badges for people you know |
@@ -126,8 +133,10 @@ Optionally copy `config.default.json` to
 | key | default | meaning |
 |---|---|---|
 | `enable` | `true` | master switch |
-| `mode` | `"label"` | `"label"` → `Player_001`; `"blank"` → hide entirely |
-| `namePrefix` | `""` | player prefix. **Empty** = follow the client language (`玩家_` on zh, `Player_` elsewhere); a value overrides it |
+| `mode` | `"label"` | `"label"` → `Ally_001` / `Enemy_001`; `"blank"` → hide entirely |
+| `allyPrefix` | `""` | ally prefix. **Empty** = follow the client language (`友军_` on zh, `Ally_` elsewhere) |
+| `enemyPrefix` | `""` | enemy prefix. **Empty** = follow the client language (`敌军_` on zh, `Enemy_` elsewhere) |
+| `namePrefix` | `""` | legacy shared prefix. Only a fallback: when `allyPrefix` / `enemyPrefix` are empty, a custom value here is used for both teams; leave it empty to use the team defaults |
 | `botMode` | `"botLabel"` | bots: `"botLabel"` / `"label"` / `"keep"` / `"blank"` |
 | `botPrefix` | `"Bot_"` | bot prefix (e.g. `机器人_`) |
 | `hideBotClanTag` | `true` | hide bot clan tags |
@@ -181,12 +190,12 @@ you need to point at a specific interpreter.
 
 ```powershell
 python build.py          # compile with Python 2.7 + package .wotmod/.zip
-py -2.7 test_mod.py          # behaviour (22 checks)
+py -2.7 test_mod.py          # behaviour (31 checks)
 py -2.7 test_real_client.py  # against the REAL client classes (13)
 py -2.7 test_loader.py       # client mod-loader simulation (9)
 py -2.7 test_package.py      # package is loadable by the game (8)
-py -2.7 test_settings.py     # settings menu integration (52)
-py -2.7 test_tab_panel.py    # TAB panel + clan tags (18)
+py -2.7 test_settings.py     # settings menu integration (56)
+py -2.7 test_tab_panel.py    # TAB panel + clan tags (21)
 py -2.7 test_identity.py     # identity detection, self never masked (13)
 py -2.7 test_bots.py         # official bot prefix (18)
 py -2.7 test_bot_numbering.py   # each bot gets a distinct stable number (12)
@@ -196,7 +205,7 @@ py -2.7 test_profile_clan.py # results clan hiding + profile switch (18)
 py -2.7 test_badges.py       # badge hiding (43)
 py -2.7 test_team_badges.py  # team-stats badge hiding (21)
 py -2.7 test_results.py      # results: bots vs players (30)
-py -2.7 test_prefix_language.py # prefix follows the client language (18)
+py -2.7 test_prefix_language.py # player/team prefixes (34)
 py -2.7 test_surface_switches.py # per-surface switches + failure isolation (113)
 py -2.7 test_review_findings.py  # review-finding regressions (22)
 py -2.7 test_internal_artifact.py # version-locked internal build (19)

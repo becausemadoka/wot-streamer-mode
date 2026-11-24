@@ -3,10 +3,16 @@
 
   "enable": true,
 
-  "_mode_comment": "'label' = replace the nickname with e.g. Player_001 (recommended); 'blank' = show nothing at all",
+  "_mode_comment": "'label' = replace the nickname with e.g. Ally_001 / Enemy_001 (recommended); 'blank' = show nothing at all",
   "mode": "label",
 
-  "_namePrefix_comment": "Prefix used in 'label' mode; a 3-digit counter is appended. Leave EMPTY to follow the client language automatically (玩家_ on a Chinese client, Player_ elsewhere). Any value here overrides that.",
+  "_allyPrefix_comment": "Prefix for anonymised players on YOUR team; a 3-digit counter is appended. Leave EMPTY to follow the client language automatically (友军_ on a Chinese client, Ally_ elsewhere).",
+  "allyPrefix": "",
+
+  "_enemyPrefix_comment": "Prefix for anonymised players on the ENEMY team. Leave EMPTY to follow the client language automatically (敌军_ on a Chinese client, Enemy_ elsewhere).",
+  "enemyPrefix": "",
+
+  "_namePrefix_comment": "Legacy fallback for both teams. Leave EMPTY unless you want one shared prefix; allyPrefix/enemyPrefix take precedence when set.",
   "namePrefix": "",
 
   "_bot_comment": "Official bots (the client shows them as ':Name Surname:'). They get their own prefix and their own counter, e.g. Bot_001. Use 机器人_ for a Chinese prefix.",

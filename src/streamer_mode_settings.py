@@ -47,14 +47,15 @@ MOD_LINKAGE = 'akemi.streamermode'
 # so leaving this at 1 meant every update was silently DISCARDED and the menu
 # kept rendering the first template it ever saw.  Bump it and the new page is
 # picked up on the next launch.
-SETTINGS_VERSION = 7
+SETTINGS_VERSION = 8
 SETTINGS_KEY = 'settingsVersion'
 
 # Maps a settings-page variable name <-> our config key.
 VAR_TO_KEY = {
     'enabled': 'enable',
     'mode': 'mode',
-    'namePrefix': 'namePrefix',
+    'allyPrefix': 'allyPrefix',
+    'enemyPrefix': 'enemyPrefix',
     'botMode': 'botMode',
     'botPrefix': 'botPrefix',
     'hideBotClanTag': 'hideBotClanTag',
@@ -80,7 +81,14 @@ VAR_TO_KEY = {
     'showRealNamesInProfile': 'showRealNamesInProfile',
 }
 
-MODE_OPTIONS = ['Player_001 (label)', 'Hide entirely']
+# Variables from an older template that no longer have a control.  Applying
+# them lets a player who set a prefix in the menu before 1.0.4 keep it as the
+# legacy fallback for both teams.
+LEGACY_VAR_TO_KEY = {
+    'namePrefix': 'namePrefix',
+}
+
+MODE_OPTIONS = ['Ally_001 / Enemy_001 (label)', 'Hide entirely']
 
 # Dropdown order must match BOT_MODES in the mod.
 BOT_MODE_OPTIONS = ['Bot_001 (own prefix)',
@@ -99,10 +107,13 @@ TEXTS = {
         'enabled': 'Enable Streamer Mode',
         'enabledTip': 'Anonymise other players\' nicknames in battle.',
         'mode': 'How to hide a nickname',
-        'modeTip': 'Replace it with Player_001, or hide it entirely.',
-        'namePrefix': 'Player name prefix',
-        'namePrefixTip': 'Prefix for anonymised PLAYERS, e.g. Player_001. '
-                         'Set independently from the bot prefix below.',
+        'modeTip': 'Replace it with Ally_001 / Enemy_001, or hide it entirely.',
+        'allyPrefix': 'Ally name prefix',
+        'allyPrefixTip': 'Prefix for anonymised players on YOUR team, e.g. '
+                         'Ally_001. Leave blank to use the default.',
+        'enemyPrefix': 'Enemy name prefix',
+        'enemyPrefixTip': 'Prefix for anonymised players on the ENEMY team, '
+                          'e.g. Enemy_001. Leave blank to use the default.',
         'sectionBots': 'Bots',
         'botMode': 'How to show bots',
         'botModeTip': 'Bots use their own counter, separate from players.',
@@ -152,9 +163,11 @@ TEXTS = {
         'enabled': '启用主播模式',
         'enabledTip': '在战斗中匿名化其他玩家的昵称。',
         'mode': '昵称隐藏方式',
-        'modeTip': '替换为 Player_001,或完全隐藏。',
-        'namePrefix': '玩家名称前缀',
-        'namePrefixTip': '匿名化【真人玩家】的前缀,例如 Player_001。与下面的机器人前缀相互独立。',
+        'modeTip': '替换为 友军_001 / 敌军_001,或完全隐藏。',
+        'allyPrefix': '友军名称前缀',
+        'allyPrefixTip': '匿名化【友军】真人玩家的前缀,例如 友军_001。留空则使用默认值。',
+        'enemyPrefix': '敌军名称前缀',
+        'enemyPrefixTip': '匿名化【敌军】真人玩家的前缀,例如 敌军_001。留空则使用默认值。',
         'sectionBots': '官方机器人(BOT)',
         'botMode': '机器人昵称显示方式',
         'botModeTip': '机器人使用独立编号,与玩家分开计数。',
@@ -261,6 +274,18 @@ def _defaultNamePrefix(config):
     return 'Player_'
 
 
+def _defaultTeamPrefix(isAlly):
+    """The ally/enemy prefix default, following the client language."""
+    try:
+        from helpers import getClientLanguage
+        lang = (getClientLanguage() or '').lower()
+        if lang == 'zh' or lang.startswith('zh_') or lang.startswith('zh-'):
+            return u'友军_' if isAlly else u'敌军_'
+    except Exception:
+        pass
+    return 'Ally_' if isAlly else 'Enemy_'
+
+
 def buildTemplate():
     """The settings page shown in the Aslain Mod Menu."""
     try:
@@ -274,9 +299,11 @@ def buildTemplate():
                 templates.createDropdown(
                     _t('mode'), 'mode', MODE_OPTIONS, 0, _t('modeTip')),
                 templates.createInput(
-                    _t('namePrefix'), 'namePrefix',
-                    _defaultNamePrefix(None),
-                    _t('namePrefixTip')),
+                    _t('allyPrefix'), 'allyPrefix',
+                    _defaultTeamPrefix(True), _t('allyPrefixTip')),
+                templates.createInput(
+                    _t('enemyPrefix'), 'enemyPrefix',
+                    _defaultTeamPrefix(False), _t('enemyPrefixTip')),
 
                 templates.createEmpty(10),
                 templates.createLabel(_t('sectionBots')),
@@ -362,7 +389,8 @@ def _defaultsFromConfig(config):
     return {
         'enabled': bool(safe(lambda: config.enabled(), True)),
         'mode': 0 if safe(lambda: config.mode(), 'label') == 'label' else 1,
-        'namePrefix': safe(lambda: config.prefix(), 'Player_') or 'Player_',
+        'allyPrefix': safe(lambda: config.allyPrefix(), 'Ally_') or 'Ally_',
+        'enemyPrefix': safe(lambda: config.enemyPrefix(), 'Enemy_') or 'Enemy_',
         'botMode': botModeIndex(),
         'botPrefix': safe(lambda: config.botPrefix(), 'Bot_') or 'Bot_',
         'hideBotClanTag': flag('hideBotClanTag'),
@@ -520,7 +548,7 @@ class SettingsPage(object):
     def _apply(self, settings):
         if not isinstance(settings, dict):
             return
-        for var, key in VAR_TO_KEY.items():
+        for var, key in list(VAR_TO_KEY.items()) + list(LEGACY_VAR_TO_KEY.items()):
             if var not in settings:
                 continue
             value = settings[var]
@@ -541,6 +569,12 @@ class SettingsPage(object):
                     # Empty box: fall back to the language-appropriate default,
                     # so clearing the field on a Chinese client yields 玩家_.
                     value = _defaultNamePrefix(self._config)
+                value = value.strip()
+            elif var in ('allyPrefix', 'enemyPrefix'):
+                # Empty means "use the team default"; keep it empty instead of
+                # pinning a concrete language-dependent string.
+                if not isinstance(value, basestring) or not value.strip():
+                    value = ''
                 value = value.strip()
             elif var == 'botPrefix':
                 if not isinstance(value, basestring) or not value.strip():

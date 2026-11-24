@@ -19,7 +19,7 @@ MOD_NAME = 'akemi.streamermode'
 # with where the file is installed: the client loads a package from whatever
 # mods/<client version>/ folder the player puts it in, and reads the identity
 # from meta.xml, not from the filename.
-MOD_VERSION = '1.0.3'
+MOD_VERSION = '1.0.4'
 
 # Third-party packages shipped alongside the mod so the in-game settings menu
 # works without the player hunting for dependencies.  Each entry is
@@ -32,7 +32,7 @@ MOD_VERSION = '1.0.3'
 # These are NOT covered by this project's MIT licence.  DIST_FILES below makes
 # that visible to whoever opens the archive.
 VENDORED = [
-    'aslain.modmenu_2.1.15.wotmod',
+    'aslain.modmenu_2.1.16.wotmod',
     'net.openwg.gameface_1.2.2.wotmod',
 ]
 VENDOR_DIR = os.path.join(HERE, 'vendor')
@@ -42,14 +42,17 @@ This package contains third-party mods that are NOT part of akemi.streamermode
 and are NOT covered by its MIT licence.
 
 ------------------------------------------------------------------------------
-aslain.modmenu_2.1.15.wotmod
+aslain.modmenu_2.1.16.wotmod
 ------------------------------------------------------------------------------
 Mod Menu for World of Tanks
 Copyright (c) 2026 Aslain, https://aslain.com
 https://github.com/Aslain/modmenu
 
-Obtained from the upstream release v2.1.15; the SHA-256 of the file as published
+Obtained from the upstream release v2.1.16; the SHA-256 of the file as published
 there matches the copy in this archive, i.e. it is redistributed unchanged.
+
+Upstream SHA-256:
+4602135805d54e6610e95f0deafa03ded8ae63a705bd579fa4f0eecd285914f6
 
 The repository is released under the MIT licence; the full text is reproduced
 at the end of this file.  The package's own NOTICE, which is included inside
@@ -242,6 +245,10 @@ def default_config():
         # Empty: the mod picks Player_ or 玩家_ from the client language.
         # Writing a concrete prefix here would pin every client to one language.
         "namePrefix": "",
+        # Empty: team-specific defaults follow the client language
+        # (Ally_/Enemy_ or 友军_/敌军_).
+        "allyPrefix": "",
+        "enemyPrefix": "",
         "botMode": "botLabel",
         "botPrefix": "Bot_",
         "hideBotClanTag": True,

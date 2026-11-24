@@ -47,7 +47,7 @@ python build_internal.py # -> dist_internal/（锁定版本的内部测试版）
 入口函数齐全。任何一项不通过都会中止构建，所以坏包不会在无提示的情况下产生。
 
 完整发布 zip 还需要把两个第三方包原样放进 `vendor/`：
-`aslain.modmenu_2.1.15.wotmod` 和 `net.openwg.gameface_1.2.2.wotmod`。它们不随
+`aslain.modmenu_2.1.16.wotmod` 和 `net.openwg.gameface_1.2.2.wotmod`。它们不随
 源码仓库提交，需从上游发布页获取；缺少时 `build.py` 会明确报错。
 
 `build_internal.py` 会复制源码、填入 `TARGET_VERSION`、编译后打包。锁定版在
@@ -60,15 +60,17 @@ GitHub 的 MCP 连接器只有仓库 / PR / issue 类工具，建 Release 和传
 带 `contents: write` 的 token 直连 REST API，所以仓库里带了一个小脚本：
 
 ```powershell
-$env:GH_TOKEN = 'github_pat_xxx'   # fine-grained token，Contents: read + write
+python publish_release.py --save-token   # 交互输入，DPAPI 加密保存
 python publish_release.py --notes-file notes.md [--clobber]
 ```
 
 脚本从 `build.py` 读 `MOD_VERSION`，默认操作 tag `v<版本>` 和
 `build/akemi.streamermode_<版本>.zip`：Release 不存在就新建，存在就更新
 标题 / 正文；附件已存在时需加 `--clobber` 才会覆盖。tag 必须先在本地存在
-（否则 GitHub 会把 Release 建在默认分支上），脚本会提前拦下。token 只从
-环境变量读取，不落盘。
+（否则 GitHub 会把 Release 建在默认分支上），脚本会提前拦下。token 默认
+保存在 `%APPDATA%\streamer-mode\gh_token.dpapi`，由 Windows DPAPI 按当前用户
+加密；只有同一个 Windows 用户能解密。也可继续用 `GH_TOKEN` /
+`GITHUB_TOKEN` 环境变量，或通过 `--token-file` 指定其它 DPAPI 文件。
 
 ## 测试套件
 
@@ -78,20 +80,20 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 
 | 文件 | 项数 | 验证什么 |
 |---|---|---|
-| `test_mod.py` | 22 | 对真实类形状的钩子假设（主回归） |
+| `test_mod.py` | 31 | 对真实类形状的钩子假设（主回归） |
 | `test_real_client.py` | 13 | 加载**真实客户端类**（fixture）并跑钩子 |
 | `test_identity.py` | 13 | 自己 / 好友 / 军团 / 组队 的身份判定 |
 | `test_bots.py` | 18 | 机器人前缀处理 |
 | `test_bot_numbering.py` | 12 | 每台机器人编号互不相同且稳定 |
-| `test_tab_panel.py` | 18 | TAB 全屏战绩面板 + 军团标签 |
+| `test_tab_panel.py` | 21 | TAB 全屏战绩面板 + 军团标签 |
 | `test_tab_bot_numbers.py` | 13 | TAB 与战斗内面板编号一致 |
 | `test_results.py` | 30 | 结算界面：机器人与玩家、豁免规则 |
 | `test_results_numbers.py` | 17 | 结算编号与战斗内一致 |
 | `test_team_badges.py` | 21 | 团队战绩奖章隐藏 |
 | `test_profile_clan.py` | 18 | 结算军团隐藏 + 资料页开关 |
 | `test_badges.py` | 43 | 奖章隐藏（战斗内 / 机器人 / 豁免 / 总开关） |
-| `test_prefix_language.py` | 18 | 前缀跟随客户端语言 |
-| `test_settings.py` | 52 | 设置页注册、版本递增、回调签名兼容 |
+| `test_prefix_language.py` | 34 | 友军/敌军前缀、语言回退 |
+| `test_settings.py` | 56 | 设置页注册、版本递增、回调签名兼容 |
 | `test_surface_switches.py` | 113 | 各界面开关、异常隔离与恢复 |
 | `test_review_findings.py` | 22 | 复查发现的问题回归 |
 | `test_loader.py` | 9 | 模拟客户端 mod 加载器 |
@@ -137,8 +139,10 @@ py -2.7 test_real_client.py
 | 键 | 默认 | 含义 |
 |---|---|---|
 | `enable` | true | 总开关 |
-| `mode` | `label` | `label` = `Player_001`；`blank` = 完全隐藏 |
-| `namePrefix` | `""` | 空 = 跟随客户端语言（中文 `玩家_`，其他 `Player_`） |
+| `mode` | `label` | `label` = `友军_001` / `敌军_001`；`blank` = 完全隐藏 |
+| `allyPrefix` | `""` | 友军前缀；空 = 跟随客户端语言（中文 `友军_`，其他 `Ally_`） |
+| `enemyPrefix` | `""` | 敌军前缀；空 = 跟随客户端语言（中文 `敌军_`，其他 `Enemy_`） |
+| `namePrefix` | `""` | 旧版通用前缀，仅作两队共享回退 |
 | `botMode` | `botLabel` | `botLabel` / `label` / `keep` / `blank` |
 | `botPrefix` | `Bot_` | 机器人前缀，与玩家前缀独立 |
 | `exclude.ownName` / `friendName` / `clanmateName` / `divmateName` | true | 谁保留真名 |
@@ -172,7 +176,7 @@ py -2.7 test_real_client.py
 
 1. 启动后在 `game.log` 找 `[StreamerMode] init (...)`。若出现
    `... missing; not installed.`，说明该钩子点在这个客户端版本已不存在。
-2. 战斗内：陌生人显示 `Player_001` / `玩家_001`；自己、好友、组队队友保留真名。
+2. 战斗内：友军显示 `友军_001` / `Ally_001`，敌军显示 `敌军_001` / `Enemy_001`；自己、好友、组队队友保留真名。
 3. TAB：编号与面板一致；军团标签、奖章都隐藏。
 4. 击杀提示、小地图、战车标记、阵亡回放：同样隐藏。
 5. 结算：个人战绩与团队战绩都一致，名字与标签隐藏。

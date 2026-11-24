@@ -191,7 +191,8 @@ check('MOD_LINKAGE set', mod.MOD_LINKAGE == 'akemi.streamermode', mod.MOD_LINKAG
 class FakeConfig(object):
     def __init__(self):
         self._values = {
-            'enable': True, 'mode': 'label', 'namePrefix': 'Player_',
+            'enable': True, 'mode': 'label', 'namePrefix': '',
+            'allyPrefix': '', 'enemyPrefix': '',
             'botMode': 'botLabel', 'botPrefix': 'Bot_', 'hideBotClanTag': True,
             'exclude.ownName': True, 'exclude.friendName': True,
             'exclude.clanmateName': True, 'exclude.divmateName': True,
@@ -212,6 +213,12 @@ class FakeConfig(object):
 
     def prefix(self):
         return self._values.get('namePrefix', 'Player_')
+
+    def allyPrefix(self):
+        return self._values.get('allyPrefix') or 'Ally_'
+
+    def enemyPrefix(self):
+        return self._values.get('enemyPrefix') or 'Enemy_'
 
     def botMode(self):
         return self._values.get('botMode', 'botLabel')
@@ -257,10 +264,16 @@ if calls['setModTemplate']:
     check('mode defaults to index 0 (label)', dd and dd[0]['value'] == 0,
           dd and dd[0]['value'])
 
-    inputs = [c for c in template['column1'] if c.get('varName') == 'namePrefix']
-    check('namePrefix is an Input seeded from config',
-          inputs and inputs[0]['type'] == 'Input'
-          and inputs[0]['value'] == 'Player_', inputs)
+    allyInput = [c for c in template['column1']
+                 if c.get('varName') == 'allyPrefix']
+    enemyInput = [c for c in template['column1']
+                  if c.get('varName') == 'enemyPrefix']
+    check('allyPrefix is an Input seeded from config',
+          allyInput and allyInput[0]['type'] == 'Input'
+          and allyInput[0]['value'] == 'Ally_', allyInput)
+    check('enemyPrefix is an Input seeded from config',
+          enemyInput and enemyInput[0]['type'] == 'Input'
+          and enemyInput[0]['value'] == 'Enemy_', enemyInput)
 
     # --- bot controls
     bots = [c for c in template['column1'] if c.get('varName') == 'botMode']
@@ -312,7 +325,8 @@ if cb:
         cb('akemi.streamermode', {
             'enabled': False,
             'mode': 1,                     # -> 'blank'
-            'namePrefix': 'Hidden_',
+            'allyPrefix': 'Friend_',
+            'enemyPrefix': 'Foe_',
             'excludeFriend': False,
             'scopeMinimap': False,
         })
@@ -323,8 +337,10 @@ if cb:
 check('enabled applied', cfg._values['enable'] is False, cfg._values['enable'])
 check('mode index 1 -> "blank"', cfg._values['mode'] == 'blank',
       cfg._values['mode'])
-check('prefix applied', cfg._values['namePrefix'] == 'Hidden_',
-      cfg._values['namePrefix'])
+check('ally prefix applied', cfg._values['allyPrefix'] == 'Friend_',
+      cfg._values['allyPrefix'])
+check('enemy prefix applied', cfg._values['enemyPrefix'] == 'Foe_',
+      cfg._values['enemyPrefix'])
 check('checkbox off applied', cfg._values['exclude.friendName'] is False,
       cfg._values['exclude.friendName'])
 check('scope off applied', cfg._values['scope.minimap'] is False,
@@ -352,14 +368,19 @@ if cb:
 check('out-of-range botMode falls back to botLabel',
       cfg._values['botMode'] == 'botLabel', cfg._values['botMode'])
 
-# An empty box means "not chosen", so the prefix falls back to Config.prefix()
-# -- i.e. to whatever the mod considers the default for this client language
-# (玩家_ on a Chinese client, Player_ elsewhere).  FakeConfig currently reports
-# 'Hidden_', so that is what an emptied field must restore; hard-coding
-# 'Player_' here would pin every client to one language.
-cb('akemi.streamermode', {'namePrefix': '   '}, False)
-check('blank prefix falls back to the config default',
-      cfg._values['namePrefix'] == 'Hidden_', cfg._values['namePrefix'])
+# An empty team prefix means "use the default", so it is stored empty and
+# Config.allyPrefix()/enemyPrefix() decide the language-appropriate value.
+cb('akemi.streamermode', {'allyPrefix': '   ', 'enemyPrefix': ''}, False)
+check('blank ally prefix is stored as empty',
+      cfg._values['allyPrefix'] == '', cfg._values['allyPrefix'])
+check('blank enemy prefix is stored as empty',
+      cfg._values['enemyPrefix'] == '', cfg._values['enemyPrefix'])
+
+# The old namePrefix is still accepted from an older saved template, so a
+# menu-set prefix survives the upgrade as the shared fallback.
+cb('akemi.streamermode', {'namePrefix': 'Legacy_'}, False)
+check('legacy namePrefix still applied', cfg._values['namePrefix'] == 'Legacy_',
+      cfg._values['namePrefix'])
 
 # a callback for another mod must be ignored
 before = dict(cfg._values)
@@ -470,7 +491,8 @@ print()
 print('=== up-to-date saved settings do NOT re-register ===')
 calls['setModTemplate'] = []
 calls['registerCallback'] = []
-fresh_saved = {'enabled': True, 'mode': 0, 'namePrefix': 'Player_',
+fresh_saved = {'enabled': True, 'mode': 0, 'allyPrefix': 'Ally_',
+               'enemyPrefix': 'Enemy_',
                'botMode': 0, 'botPrefix': 'Bot_', 'hideBotClanTag': True,
                'excludeSelf': True, 'excludeFriend': True,
                'excludeClanmate': True, 'excludeSquad': True,

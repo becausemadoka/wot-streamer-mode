@@ -310,6 +310,63 @@ check('numbering resets per battle',
       PlayerInfoVO(accountDBID=200, avatarSessionID='s200',
                    name='X').getPlayerLabel() == 'Player_001')
 
+# --------------------------------------------------------------------------
+# team-aware labels: ally and enemy prefixes are independent
+# --------------------------------------------------------------------------
+mod.CONFIG._values['namePrefix'] = ''
+mod.CONFIG._values['allyPrefix'] = ''
+mod.CONFIG._values['enemyPrefix'] = ''
+mod.ANONYMISER.reset()
+
+teamAlly = PlayerInfoVO(accountDBID=300, avatarSessionID='s300',
+                        name='TeamAlly')
+teamAlly.team = 1
+teamEnemy = PlayerInfoVO(accountDBID=301, avatarSessionID='s301',
+                         name='TeamEnemy')
+teamEnemy.team = 2
+
+check('ally player label uses Ally_',
+      teamAlly.getPlayerLabel() == 'Ally_001',
+      teamAlly.getPlayerLabel())
+check('enemy player label uses Enemy_',
+      teamEnemy.getPlayerLabel() == 'Enemy_001',
+      teamEnemy.getPlayerLabel())
+
+teamAllyVeh = VehicleArenaInfoVO(vehicleID=30, team=1, player=teamAlly)
+teamEnemyVeh = VehicleArenaInfoVO(vehicleID=31, team=2, player=teamEnemy)
+check('displayed name keeps the ally label',
+      teamAllyVeh.getDisplayedName('TeamAlly') == 'Ally_001',
+      teamAllyVeh.getDisplayedName('TeamAlly'))
+check('displayed name keeps the enemy label',
+      teamEnemyVeh.getDisplayedName('TeamEnemy') == 'Enemy_001',
+      teamEnemyVeh.getDisplayedName('TeamEnemy'))
+check('formatter keeps the ally label',
+      fmt.format(teamAllyVeh, None).playerName == 'Ally_001',
+      fmt.format(teamAllyVeh, None).playerName)
+check('formatter keeps the enemy label',
+      fmt.format(teamEnemyVeh, None).playerName == 'Enemy_001',
+      fmt.format(teamEnemyVeh, None).playerName)
+
+# PlayerInfoVO has NO team field, so the panel path (getPlayerLabel) must still
+# resolve the side from what the vehicle-aware paths already learned.
+mod.ANONYMISER.noteTeam(310, 1)
+mod.ANONYMISER.noteTeam(311, 2)
+bareAlly = PlayerInfoVO(accountDBID=310, avatarSessionID='s310',
+                        name='BareAlly')
+bareEnemy = PlayerInfoVO(accountDBID=311, avatarSessionID='s311',
+                         name='BareEnemy')
+check('name-only path resolves an ally from the arena team map',
+      bareAlly.getPlayerLabel() == 'Ally_002',
+      bareAlly.getPlayerLabel())
+check('name-only path resolves an enemy from the arena team map',
+      bareEnemy.getPlayerLabel() == 'Enemy_002',
+      bareEnemy.getPlayerLabel())
+check('unknown id still falls back to the generic prefix',
+      PlayerInfoVO(accountDBID=312, avatarSessionID='s312',
+                   name='NoTeam').getPlayerLabel() == 'Player_001',
+      PlayerInfoVO(accountDBID=312, avatarSessionID='s312',
+                   name='NoTeam').getPlayerLabel())
+
 # uninstall restores originals
 mod.fini()
 restored = PlayerInfoVO(accountDBID=201, avatarSessionID='s201', name='AfterFini')

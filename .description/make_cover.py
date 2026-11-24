@@ -104,7 +104,7 @@ qx.text((pad, 336), 'The stream hides everyone but you.',
 
 # small chips
 chip_y = 426
-chips = [('Player_001', AMBER), ('MIT', TEXT_MID), ('2.4.1', TEXT_MID)]
+chips = [('Ally_001', AMBER), ('MIT', TEXT_MID), ('2.4.1', TEXT_MID)]
 cx = pad
 for label, color in chips:
     w, h = text_size(qx, label, F_MONO_XS)
@@ -130,8 +130,8 @@ for i, c in enumerate((RED, AMBER, GREEN)):
 
 # rows -- use pure placeholders so no font coverage issue
 rows = [
-    ('Player_001', 'T-34-85',    82, TEXT_MID, False),
-    ('Player_002', 'IS-3',        96, TEXT_MID, False),
+    ('Ally_001',   'T-34-85',    82, TEXT_MID, False),
+    ('Enemy_001',  'IS-3',        96, TEXT_MID, False),
     ('Bot_001',    'T-54',        64, TEXT_LOW, False),
     ('You',        'Object 277', 100, TEXT_HI,  True),
 ]
@@ -154,7 +154,7 @@ for name, tank, hp, color, is_self in rows:
     ry += 82
 
 # callout: masked-stranger callout
-qx.text((px + 26, py + ph - 28), 'Player_001  =  masked',
+qx.text((px + 26, py + ph - 28), 'Ally_001 / Enemy_001  =  masked',
         font=F_MONO_XS, fill=AMBER)
 
 # ---- footer strip

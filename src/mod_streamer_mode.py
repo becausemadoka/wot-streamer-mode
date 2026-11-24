@@ -67,6 +67,8 @@ TARGET_VERSION = ''
 KEY_ENABLE = 'enable'
 KEY_MODE = 'mode'                       # 'label' | 'blank'
 KEY_PREFIX = 'namePrefix'
+KEY_ALLY_PREFIX = 'allyPrefix'
+KEY_ENEMY_PREFIX = 'enemyPrefix'
 KEY_BOT_MODE = 'botMode'                # 'botLabel' | 'label' | 'keep' | 'blank'
 KEY_BOT_PREFIX = 'botPrefix'
 KEY_EXCLUDE_SELF = 'exclude.ownName'
@@ -150,6 +152,8 @@ class _Surface(object):
         return False
 
 DEFAULT_PREFIX = 'Player_'
+DEFAULT_ALLY_PREFIX = 'Ally_'
+DEFAULT_ENEMY_PREFIX = 'Enemy_'
 DEFAULT_BOT_PREFIX = 'Bot_'
 
 # The default prefix follows the client's UI language, so a Chinese client shows
@@ -158,6 +162,13 @@ DEFAULT_BOT_PREFIX = 'Bot_'
 # never override a deliberate choice.
 LOCALISED_PREFIXES = {
     'zh': u'玩家_',
+}
+
+# Team labels follow the client language too.  The old namePrefix/玩家_/Player_
+# remains the fallback for callers that do not know which team a player is on,
+# and for users who deliberately pinned one prefix for everybody.
+LOCALISED_TEAM_PREFIXES = {
+    'zh': (u'友军_', u'敌军_'),
 }
 
 # How bots are treated.  Bots are not a privacy concern -- their names are game
@@ -178,6 +189,11 @@ DEFAULTS = {
     # language-appropriate default (玩家_ on a zh client, Player_ elsewhere).
     # Putting a concrete string here would shadow that fallback forever.
     KEY_PREFIX: '',
+    # Empty means "use the team-specific default" (Ally_/Enemy_, or 友军_/敌军_
+    # on a Chinese client).  An explicit legacy namePrefix still wins for both
+    # teams, so existing configs keep the labels their owner chose.
+    KEY_ALLY_PREFIX: '',
+    KEY_ENEMY_PREFIX: '',
     KEY_BOT_MODE: BOT_MODE_BOT_LABEL,
     KEY_BOT_PREFIX: DEFAULT_BOT_PREFIX,
     KEY_EXCLUDE_SELF: True,
@@ -560,6 +576,21 @@ class Config(object):
                         return DEFAULT_PREFIX
         return DEFAULT_PREFIX
 
+    @classmethod
+    def _defaultTeamPrefix(cls, isAlly):
+        """Language-appropriate ally/enemy default: 友军_/敌军_ or Ally_/Enemy_."""
+        fallback = DEFAULT_ALLY_PREFIX if isAlly else DEFAULT_ENEMY_PREFIX
+        lang = cls._clientLanguage()
+        if lang:
+            for code, prefixes in LOCALISED_TEAM_PREFIXES.items():
+                if lang == code or lang.startswith(code + '_') \
+                        or lang.startswith(code + '-'):
+                    try:
+                        return prefixes[0 if isAlly else 1].encode('utf-8')
+                    except Exception:
+                        return fallback
+        return fallback
+
     def prefix(self):
         """Player label prefix: the user's choice, else the localised default.
 
@@ -569,6 +600,41 @@ class Config(object):
         """
         return self._cleanPrefix(self._values.get(KEY_PREFIX),
                                  self._defaultPrefix())
+
+    def _teamPrefix(self, key, fallback):
+        """Explicit team prefix, then the legacy generic prefix, then default."""
+        explicit = self._values.get(key)
+        if isinstance(explicit, basestring) and explicit.strip():
+            return self._cleanPrefix(explicit, fallback)
+        # Old configs only have namePrefix.  Honour it for both teams instead
+        # of silently changing labels after an upgrade; the user can split the
+        # prefixes later in the menu or config.
+        legacy = self._values.get(KEY_PREFIX)
+        if isinstance(legacy, basestring) and legacy.strip():
+            return self._cleanPrefix(legacy, fallback)
+        return fallback
+
+    def allyPrefix(self):
+        return self._teamPrefix(KEY_ALLY_PREFIX,
+                                self._defaultTeamPrefix(True))
+
+    def enemyPrefix(self):
+        return self._teamPrefix(KEY_ENEMY_PREFIX,
+                                self._defaultTeamPrefix(False))
+
+    def prefixForTeam(self, team):
+        """Prefix for team 1 (ally), team 2 (enemy), or the generic fallback."""
+        try:
+            if hasattr(team, 'value'):
+                team = team.value
+            team = int(team)
+        except Exception:
+            team = None
+        if team == 1:
+            return self.allyPrefix()
+        if team == 2:
+            return self.enemyPrefix()
+        return self.prefix()
 
     def botMode(self):
         """How bot nicknames are treated. Default: give them their own prefix.
@@ -938,6 +1004,35 @@ def _isBot(playerVO):
         return False
 
 
+def _teamNumber(value):
+    """Normalise the client's team field to 1 (ally) or 2 (enemy).
+
+    Some client versions expose an enum member with .value; others an int.  Any
+    other value means "unknown", which falls back to the old generic prefix.
+    """
+    try:
+        if hasattr(value, 'value'):
+            value = value.value
+        value = int(value)
+    except Exception:
+        return None
+    return value if value in (1, 2) else None
+
+
+def _teamOf(obj):
+    """Team of a PlayerInfoVO / VehicleArenaInfoVO / results PlayerInfo."""
+    if obj is None:
+        return None
+    for attr in ('team', '_PlayerInfo__team'):
+        try:
+            team = _teamNumber(getattr(obj, attr, None))
+        except Exception:
+            team = None
+        if team is not None:
+            return team
+    return None
+
+
 class _ObjKey(object):
     """Hashable identity for a bot's value object.
 
@@ -986,6 +1081,8 @@ class Anonymiser(object):
     def reset(self):
         self._index = {}          # key -> label, shared lookup
         self._next = 0            # player counter
+        self._nextAlly = 0        # allied player counter
+        self._nextEnemy = 0       # enemy player counter
         self._botNext = 0         # bot counter
         self._warned = False
         # bot name -> canonical key, so a caller that lacks a vehicle id still
@@ -994,6 +1091,11 @@ class Anonymiser(object):
         # dbID -> the original name we replaced, so the profile window can undo
         # our masking when the "show real names in profile" option is on.
         self._realNames = {}
+        # dbID -> team, filled lazily from the arena.  PlayerInfoVO carries no
+        # team field, so the panel path (getPlayerLabel) needs its own lookup or
+        # it would fall back to the generic legacy prefix.
+        self._teamByDBID = {}
+        self._teamTries = 0
         # session-scoped, so a new battle starts clean
         self._prevSession = None
 
@@ -1077,8 +1179,13 @@ class Anonymiser(object):
 
     # -- labels -------------------------------------------------------------
 
-    def labelFor(self, playerVO):
+    def labelFor(self, playerVO, team=None):
         """Stable per-battle label, so a player keeps one number everywhere."""
+        team = _teamNumber(team)
+        if team is None:
+            team = _teamOf(playerVO)
+        if team is None:
+            team = self.teamFor(getattr(playerVO, 'accountDBID', None))
         if _isBot(playerVO):
             vehicleID = getattr(playerVO, 'vehicleID', None)
             name = getattr(playerVO, 'name', None) or \
@@ -1095,9 +1202,11 @@ class Anonymiser(object):
         key = getattr(playerVO, 'accountDBID', None)
         if not key:
             key = getattr(playerVO, 'avatarSessionID', None)
-        return self.labelForID(key if key else id(playerVO), isBot=False)
+        self.noteTeam(key, team)
+        return self.labelForID(key if key else id(playerVO), isBot=False,
+                               team=team)
 
-    def labelForID(self, key, isBot=False):
+    def labelForID(self, key, isBot=False, team=None):
         """Same numbering, addressed by raw DBID/session id or a bot identity.
 
         The TAB panel only gives us an integer id, and it must produce the SAME
@@ -1114,8 +1223,14 @@ class Anonymiser(object):
         a reference to the object, so its id cannot be recycled into another
         bot's slot.
         """
-        if isinstance(key, _ObjKey):
+        team = _teamNumber(team)
+        isObjKey = isinstance(key, _ObjKey)
+        if isObjKey:
             key = key.token
+        if team is None and not isBot and not isObjKey:
+            team = self.teamFor(key)
+        if not isBot:
+            self.noteTeam(key, team)
         if not key:
             if isBot:
                 # no usable identity: give this bot its own number rather than
@@ -1131,6 +1246,12 @@ class Anonymiser(object):
             if isBot:
                 self._botNext += 1
                 label = '%s%03d' % (CONFIG.botPrefix(), self._botNext)
+            elif team == 1:
+                self._nextAlly += 1
+                label = '%s%03d' % (CONFIG.allyPrefix(), self._nextAlly)
+            elif team == 2:
+                self._nextEnemy += 1
+                label = '%s%03d' % (CONFIG.enemyPrefix(), self._nextEnemy)
             else:
                 self._next += 1
                 label = '%s%03d' % (CONFIG.prefix(), self._next)
@@ -1143,6 +1264,51 @@ class Anonymiser(object):
         (getPlayerLabel) lands on the same label."""
         if realName and realName not in self._botNameKeys:
             self._botNameKeys[realName] = key
+
+    # -- teams ---------------------------------------------------------------
+
+    def noteTeam(self, dbID, team):
+        """Remember which side a DBID is on, for callers that only carry an id.
+
+        Every vehicle-aware path hands us the team, and the arena keeps it for
+        the whole battle, so one recorded answer is enough for the rest of the
+        HUD -- including PlayerInfoVO, which has no team field of its own.
+        """
+        team = _teamNumber(team)
+        if not dbID or team is None:
+            return
+        self._teamByDBID.setdefault(dbID, team)
+
+    def teamFor(self, dbID, refresh=False):
+        """Team for a DBID, consulting the arena once when it is unknown.
+
+        ``refresh`` is for the very first frames of a battle, when the arena may
+        not be populated yet.  The arena lookup is capped so a long lobby stay
+        cannot turn this into a per-name round trip.
+        """
+        if not dbID:
+            return None
+        team = self._teamByDBID.get(dbID)
+        if team is not None:
+            return team
+        if self._teamTries >= 8 and not refresh:
+            return None
+        self._teamTries += 1
+        arenaDP = _arenaDP()
+        if arenaDP is None:
+            return None
+        try:
+            for vo in arenaDP.getVehiclesInfoIterator():
+                playerVO = getattr(vo, 'player', None)
+                if playerVO is None:
+                    continue
+                vehicleTeam = _teamOf(vo) or _teamOf(playerVO)
+                playerDBID = getattr(playerVO, 'accountDBID', None)
+                if playerDBID and vehicleTeam is not None:
+                    self._teamByDBID.setdefault(playerDBID, vehicleTeam)
+        except Exception:
+            logError('team lookup failed: %s' % traceback.format_exc())
+        return self._teamByDBID.get(dbID)
 
     # -- original names -----------------------------------------------------
 
@@ -1230,7 +1396,8 @@ class Anonymiser(object):
         except Exception:
             return False
 
-    def displayForID(self, dbID, realName, clanAbbrev=None, isBot=False):
+    def displayForID(self, dbID, realName, clanAbbrev=None, isBot=False,
+                     team=None):
         """Name to show for a raw player id (TAB panel path)."""
         if not CONFIG.scope(KEY_SCOPE_BATTLE):
             return realName
@@ -1243,7 +1410,7 @@ class Anonymiser(object):
                 return realName
             if CONFIG.mode() == 'blank':
                 return u''
-            return self.labelForID(dbID)
+            return self.labelForID(dbID, team=team)
         except Exception:
             if not self._warned:
                 self._warned = True
@@ -1309,11 +1476,16 @@ class Anonymiser(object):
             return False
         return True
 
-    def display(self, playerVO, realName):
+    def display(self, playerVO, realName, team=None):
         """Name to show.  On any internal error we hide rather than leak."""
         if not CONFIG.surfaceAllowed():
             return realName
         try:
+            team = _teamNumber(team)
+            if team is None:
+                team = _teamOf(playerVO)
+            if team is None:
+                team = self.teamFor(getattr(playerVO, 'accountDBID', None))
             if _isBot(playerVO):
                 # Key on the player VO itself: arenaDP holds it for the whole
                 # battle, so id() is unique per bot and stable across calls --
@@ -1326,7 +1498,7 @@ class Anonymiser(object):
                 return realName
             if CONFIG.mode() == 'blank':
                 return u''
-            return self.labelFor(playerVO)
+            return self.labelFor(playerVO, team=team)
         except Exception:
             if not self._warned:
                 self._warned = True
@@ -1520,7 +1692,8 @@ def _hookDisplayedName(original):
                         or getattr(playerVO, 'fakeName', None) or name
                     return ANONYMISER.botDisplay(raw, key=ANONYMISER.botKey(raw, hint=getattr(self, 'vehicleID', None), obj=playerVO))
                 if ANONYMISER.isStranger(playerVO):
-                    return ANONYMISER.display(playerVO, name)
+                    return ANONYMISER.display(playerVO, name,
+                                              team=_teamOf(self))
             return original(self, name)
         except Exception:
             # never raise into the render path; never leak a name either
@@ -1612,7 +1785,7 @@ def _hookFormat(original):
             if CONFIG.mode() == 'blank':
                 newName = u''
             else:
-                newName = ANONYMISER.labelFor(playerVO)
+                newName = ANONYMISER.labelFor(playerVO, team=_teamOf(vInfoVO))
 
             # getPlayerLabel/getPlayerFakeLabel are hooked too, so the client's
             # own composition stays anonymised.
@@ -1736,7 +1909,7 @@ def _resultsLabel(playerInfo, realValue, raw):
         ANONYMISER.rememberRealName(dbID, source)
         if CONFIG.mode() == 'blank':
             return u''
-        return ANONYMISER.labelFor(_DBIDKey(dbID))
+        return ANONYMISER.labelForID(dbID, team=_teamOf(playerInfo))
     except Exception:
         # Fail closed: never hand back text we could not classify.
         logError('results label failed: %s' % traceback.format_exc())
@@ -2157,7 +2330,7 @@ def _tabGetSet(playerModel, getter, setter, value):
             pass
 
 
-def _anonymiseTabPlayer(playerModel):
+def _anonymiseTabPlayer(playerModel, team=None):
     """Rewrite one TAB-panel player model so it shows an anonymised name.
 
     The TAB full-stats board is its own surface (scope.tabPanel), separate from
@@ -2168,6 +2341,7 @@ def _anonymiseTabPlayer(playerModel):
     """
     if not CONFIG.surface(KEY_SCOPE_TAB):
         return
+    team = _teamNumber(team)
     try:
         dbID = _tabPlayerId(playerModel)
         realName = None
@@ -2233,7 +2407,7 @@ def _anonymiseTabPlayer(playerModel):
             if CONFIG.mode() == 'blank':
                 newName = u''
             else:
-                newName = ANONYMISER.labelForID(dbID)
+                newName = ANONYMISER.labelForID(dbID, team=team)
             hideClan = CONFIG.flag(KEY_HIDE_CLAN_TAG)
 
         # setName / setUserName are the two spellings seen across versions.
@@ -2285,9 +2459,45 @@ def _hookTabInvalidatePersonalInfo(original):
     def _invalidatePersonalInfo(self, player):
         with _Surface(KEY_SCOPE_TAB):
             result = original(self, player)
-        _anonymiseTabPlayer(player)
+        _anonymiseTabPlayer(player, team=_tabTeam(self, player))
         return result
     return _invalidatePersonalInfo
+
+
+def _tabTeam(tabView, playerModel):
+    """Best-effort team lookup for one TAB model.
+
+    The model itself has no reliable team field on every client version.  The
+    TabView keeps the arena dict keyed by vehicle id, which is exactly what
+    _invalidatePersonalInfo uses to fill the model, so read it there before
+    giving up.  Unknown means the generic player prefix.
+    """
+    team = _teamOf(playerModel)
+    if team is not None:
+        return team
+    try:
+        viewModel = getattr(tabView, 'viewModel', None)
+        playerList = getattr(viewModel, 'playerList', None) if viewModel else None
+        if playerList is not None:
+            for getter, candidate in (('getAllies', 1), ('getEnemies', 2)):
+                fn = getattr(playerList, getter, None)
+                if not callable(fn):
+                    continue
+                for model in (fn() or []):
+                    if model is playerModel:
+                        return candidate
+    except Exception:
+        pass
+    try:
+        getVehicleId = getattr(playerModel, 'getVehicleId', None)
+        vehicleID = getVehicleId() if callable(getVehicleId) else None
+        vehicles = getattr(tabView, '_vehicles', None) or {}
+        info = vehicles.get(vehicleID) if vehicleID else None
+        if isinstance(info, dict):
+            return _teamNumber(info.get('team'))
+    except Exception:
+        pass
+    return None
 
 
 def _hookTabInvalidateVehiclesInfo(original):
@@ -2301,12 +2511,12 @@ def _hookTabInvalidateVehiclesInfo(original):
             playerList = getattr(viewModel, 'playerList', None) if viewModel else None
             if playerList is None:
                 return result
-            for getter in ('getAllies', 'getEnemies'):
+            for getter, team in (('getAllies', 1), ('getEnemies', 2)):
                 fn = getattr(playerList, getter, None)
                 if not callable(fn):
                     continue
                 for model in (fn() or []):
-                    _anonymiseTabPlayer(model)
+                    _anonymiseTabPlayer(model, team=team)
         except Exception:
             logError('tab list anonymise failed: %s' % traceback.format_exc())
         return result

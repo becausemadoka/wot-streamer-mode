@@ -4,16 +4,17 @@ Streamer Mode anonymises strangers' nicknames during a battle, so a live stream
 does not broadcast other people's identities. Friends, clanmates, platoon mates
 and yourself keep their real names.
 
-Labels stay stable for each battle (Player_001). Official bots use a separate
-counter (Bot_001).
+Allies and enemies use separate prefixes and counters (Ally_001 / Enemy_001).
+Labels stay stable for each battle. Official bots use a separate counter
+(Bot_001).
 
 Covered: players panel, minimap, damage log, kill and event messages, 3D markers,
 death-cam panel, the TAB full-stats page, and both scoreboards after the battle.
 
 Only displayed names and badges change. Removing the mod restores the original display.
 
-On a Chinese client strangers show 玩家_001 instead of Player_001. Other
-languages keep Player_. The prefix is fully configurable.
+On a Chinese client the defaults are 友军_001 / 敌军_001; other languages use
+Ally_ / Enemy_. The prefixes are fully configurable.
 
 BADGES AND BOTS
 
@@ -27,9 +28,9 @@ Configurable in game. The download includes Aslain Mod Menu and OpenWG Gameface,
 so the settings page works with nothing else installed. With only the mod package
 it still works and reads mods/configs/akemi.streamermode/config.json.
 
-Options: replace or hide the name, custom prefixes, who keeps a real name, clan
-tags, badges, and per-screen switches. Defaults are the privacy-preserving
-values; an unreadable config falls back to them.
+Options: replace or hide the name, separate ally/enemy prefixes, who keeps a
+real name, clan tags, badges, and per-screen switches. Defaults are the
+privacy-preserving values; an unreadable config falls back to them.
 
 The loading-screen team lists and the in-battle side panels share one switch,
 because the client reuses the rows written at loading.
@@ -52,11 +53,13 @@ It does NOT guarantee every identity is hidden everywhere. Exceptions:
 INSTALL
 
 Install all three files in <game>/mods/<client version>/
-(see <game>/version.xml):
+(<client version> is in version.xml, in the client root):
 
-  akemi.streamermode_1.0.3.wotmod   the mod
-  aslain.modmenu_2.1.15.wotmod      the settings menu
-  net.openwg.gameface_1.2.2.wotmod  runtime the menu needs
+  akemi.streamermode_<version>.wotmod  the mod
+  aslain.modmenu_2.1.16.wotmod         the settings menu
+  net.openwg.gameface_1.2.2.wotmod     runtime the menu needs
+
+Replace <version> with the release number, e.g. 1.0.4.
 
 Nothing outside mods/ is touched. Mod Menu and Gameface are third-party work,
 redistributed unchanged under their own terms. Mod Menu's source repository is

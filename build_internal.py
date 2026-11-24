@@ -28,7 +28,7 @@ WORK = os.path.join(HERE, 'build_internal')
 DIST = os.path.join(HERE, 'dist_internal')
 MOD_NAME = 'akemi.streamermode'
 # Package filename version (<id>_<version>.wotmod).  Cosmetic only.
-MOD_VERSION = '1.0.3'
+MOD_VERSION = '1.0.4'
 # The CLIENT version this internal build is pinned to.  Unlike MOD_VERSION this
 # IS functional: it is baked into the bytecode and init() refuses to run on any
 # other client version.

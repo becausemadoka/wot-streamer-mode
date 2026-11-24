@@ -24,7 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Default target: the package we just built.  Deliberately NOT the copy installed
 # into the game, so this test runs on a clean checkout without installing
 # anything.  Override with WOT_MOD=<path> to check a specific file.
-DEFAULT_MINE = os.path.join(HERE, "build", "akemi.streamermode_1.0.3.wotmod")
+DEFAULT_MINE = os.path.join(HERE, "build", "akemi.streamermode_1.0.4.wotmod")
 
 
 def _mine():

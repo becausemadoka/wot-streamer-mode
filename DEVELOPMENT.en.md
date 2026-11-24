@@ -51,7 +51,7 @@ python build_internal.py # -> dist_internal/ (version-locked test build)
 build, so a broken package cannot be produced silently.
 
 The full release zip also needs two third-party packages placed unchanged in
-`vendor/`: `aslain.modmenu_2.1.15.wotmod` and
+`vendor/`: `aslain.modmenu_2.1.16.wotmod` and
 `net.openwg.gameface_1.2.2.wotmod`. They are deliberately not committed; fetch
 them from their upstream release pages. `build.py` fails with a clear error if
 they are missing.
@@ -67,7 +67,7 @@ Release and uploading assets needs a token with `contents: write` against the
 REST API, so the repo ships a small script:
 
 ```powershell
-$env:GH_TOKEN = 'github_pat_xxx'   # fine-grained token, Contents: read + write
+python publish_release.py --save-token   # hidden prompt, stored with DPAPI
 python publish_release.py --notes-file notes.md [--clobber]
 ```
 
@@ -75,8 +75,11 @@ It reads `MOD_VERSION` from `build.py` and operates on tag `v<version>` plus
 `build/akemi.streamermode_<version>.zip` by default: it creates the Release or
 updates its title / body, and only replaces an existing asset when `--clobber`
 is passed. The tag must exist locally (otherwise GitHub would tag the default
-branch), which the script checks first. The token is read from the environment
-and never written to disk.
+branch), which the script checks first. The token is stored in
+`%APPDATA%\streamer-mode\gh_token.dpapi` and encrypted with Windows DPAPI for
+the current user; only that Windows user can decrypt it. `GH_TOKEN` /
+`GITHUB_TOKEN` still work as an environment-variable fallback, and
+`--token-file` selects a different DPAPI file.
 
 ## Test suite
 
@@ -86,20 +89,20 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 
 | File | Checks | What it verifies |
 |---|---|---|
-| `test_mod.py` | 22 | hook assumptions against real class shapes (main regression) |
+| `test_mod.py` | 31 | hook assumptions against real class shapes (main regression) |
 | `test_real_client.py` | 13 | loads **real client classes** from fixtures and runs the hooks |
 | `test_identity.py` | 13 | self / friends / clan / platoon detection |
 | `test_bots.py` | 18 | bot prefix handling |
 | `test_bot_numbering.py` | 12 | each bot gets a distinct, stable number |
-| `test_tab_panel.py` | 18 | TAB full-stats panel + clan tags |
+| `test_tab_panel.py` | 21 | TAB full-stats panel + clan tags |
 | `test_tab_bot_numbers.py` | 13 | TAB and in-battle numbers agree |
 | `test_results.py` | 30 | post-battle scoreboard: bots vs players, exemptions |
 | `test_results_numbers.py` | 17 | results numbering matches battle |
 | `test_team_badges.py` | 21 | team-stats badges hidden |
 | `test_profile_clan.py` | 18 | results clan hiding + profile switch |
 | `test_badges.py` | 43 | badge hiding (battle / bots / exemption / master switch) |
-| `test_prefix_language.py` | 18 | prefix follows the client language |
-| `test_settings.py` | 52 | settings registration, version bump, callback arity |
+| `test_prefix_language.py` | 34 | ally/enemy prefixes, language fallback |
+| `test_settings.py` | 56 | settings registration, version bump, callback arity |
 | `test_surface_switches.py` | 113 | per-surface switches, failure isolation and restore |
 | `test_review_findings.py` | 22 | regressions for review findings |
 | `test_loader.py` | 9 | simulates the client's mod loader |
@@ -153,8 +156,10 @@ unreadable file keeps `DEFAULTS`, which are all the anonymising values.
 | Key | Default | Meaning |
 |---|---|---|
 | `enable` | true | master switch |
-| `mode` | `label` | `label` = `Player_001`; `blank` = hide entirely |
-| `namePrefix` | `""` | empty = follow the client language (`玩家_` on zh, `Player_` elsewhere) |
+| `mode` | `label` | `label` = `Ally_001` / `Enemy_001`; `blank` = hide entirely |
+| `allyPrefix` | `""` | ally prefix; empty = follow the client language (`友军_` on zh, `Ally_` elsewhere) |
+| `enemyPrefix` | `""` | enemy prefix; empty = follow the client language (`敌军_` on zh, `Enemy_` elsewhere) |
+| `namePrefix` | `""` | legacy shared prefix, used only as a fallback for both teams |
 | `botMode` | `botLabel` | `botLabel` / `label` / `keep` / `blank` |
 | `botPrefix` | `Bot_` | bot prefix, independent of the player prefix |
 | `exclude.ownName` / `friendName` / `clanmateName` / `divmateName` | true | who keeps their real name |
@@ -205,8 +210,8 @@ Passing tests does not mean the mod works — the tests run offline.
 1. Launch, check `game.log` for `[StreamerMode] init (...)`. A line saying
    `... missing; not installed.` means that hook point no longer exists in this
    client version.
-2. In battle: strangers show `Player_001` / `玩家_001`; yourself, friends and
-   platoon mates keep real names.
+2. In battle: allies show `Ally_001` / `友军_001`, enemies show
+   `Enemy_001` / `敌军_001`; yourself, friends and platoon mates keep real names.
 3. TAB: numbers match the panel; clan tags and badges hidden.
 4. Kill feed, minimap, markers, postmortem: hidden.
 5. Results: personal and team stats both match, names and tags hidden.
