@@ -72,6 +72,11 @@ The old `namePrefix` key is still honoured: leave it empty to use the team
 defaults above; a custom value acts as a shared fallback for both teams until
 you set `allyPrefix` / `enemyPrefix` separately.
 
+Labels are classified against **your own team**, not against a fixed side
+number. If you spawn on team 2, your teammates still get the ally prefix and
+the opposite side gets the enemy prefix — in battle and on the post-battle
+results screen.
+
 ## Install
 
 Download **`akemi.streamermode_1.0.4.zip`** from
@@ -190,13 +195,13 @@ you need to point at a specific interpreter.
 
 ```powershell
 python build.py          # compile with Python 2.7 + package .wotmod/.zip
-py -2.7 test_mod.py          # behaviour (31 checks)
+py -2.7 test_mod.py          # behaviour (35 checks)
 py -2.7 test_real_client.py  # against the REAL client classes (13)
 py -2.7 test_loader.py       # client mod-loader simulation (9)
 py -2.7 test_package.py      # package is loadable by the game (8)
 py -2.7 test_settings.py     # settings menu integration (56)
-py -2.7 test_tab_panel.py    # TAB panel + clan tags (21)
-py -2.7 test_identity.py     # identity detection, self never masked (13)
+py -2.7 test_tab_panel.py    # TAB panel + clan tags (24)
+py -2.7 test_identity.py     # identity detection, self never masked (17)
 py -2.7 test_bots.py         # official bot prefix (18)
 py -2.7 test_bot_numbering.py   # each bot gets a distinct stable number (12)
 py -2.7 test_tab_bot_numbers.py # TAB and panel numbers agree (13)
@@ -204,8 +209,8 @@ py -2.7 test_results_numbers.py # results numbers match the battle (17)
 py -2.7 test_profile_clan.py # results clan hiding + profile switch (18)
 py -2.7 test_badges.py       # badge hiding (43)
 py -2.7 test_team_badges.py  # team-stats badge hiding (21)
-py -2.7 test_results.py      # results: bots vs players (30)
-py -2.7 test_prefix_language.py # player/team prefixes (34)
+py -2.7 test_results.py      # results: bots vs players (35)
+py -2.7 test_prefix_language.py # player/team prefixes (42)
 py -2.7 test_surface_switches.py # per-surface switches + failure isolation (113)
 py -2.7 test_review_findings.py  # review-finding regressions (22)
 py -2.7 test_internal_artifact.py # version-locked internal build (19)

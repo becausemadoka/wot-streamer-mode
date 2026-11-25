@@ -120,9 +120,9 @@ class BRPlayerInfo(object):
                  'squadIndex', '_PlayerInfo__tags', '_PlayerInfo__vehicleID')
 
     def __init__(self, dbID, realName, fakeName='', vehicleID=None,
-                 clanAbbrev=''):
+                 clanAbbrev='', team=1):
         self._PlayerInfo__dbID = dbID
-        self._PlayerInfo__team = 1
+        self._PlayerInfo__team = team
         self._PlayerInfo__realName = realName
         self._PlayerInfo__fakeName = fakeName
         self._PlayerInfo__prebattleID = None
@@ -350,6 +350,36 @@ mine = BRPlayerInfo(dbID=8001, realName='RealNick', fakeName='FakeNick')
 check('exempted player keeps real name despite native anonymiser',
       mine.realName == 'RealNick', mine.realName)
 mod.IDENTITY.ownDBID = 1000
+
+print()
+print('=== results labels follow the local player team ===')
+mod.CONFIG._values['namePrefix'] = ''
+mod.CONFIG._values['allyPrefix'] = ''
+mod.CONFIG._values['enemyPrefix'] = ''
+mod.IDENTITY._localTeam = 1
+mod.ANONYMISER.reset()
+sideOneAlly = BRPlayerInfo(dbID=9101, realName='SideOneAlly', team=1)
+sideOneEnemy = BRPlayerInfo(dbID=9102, realName='SideOneEnemy', team=2)
+check('results local team 1: team 1 is Ally_',
+      sideOneAlly.realName.startswith('Ally_'), sideOneAlly.realName)
+check('results local team 1: team 2 is Enemy_',
+      sideOneEnemy.realName.startswith('Enemy_'), sideOneEnemy.realName)
+
+mod.IDENTITY._localTeam = 2
+mod.ANONYMISER.reset()
+sideTwoAlly = BRPlayerInfo(dbID=9201, realName='SideTwoAlly', team=2)
+sideTwoEnemy = BRPlayerInfo(dbID=9202, realName='SideTwoEnemy', team=1)
+check('results local team 2: team 2 is Ally_',
+      sideTwoAlly.realName == 'Ally_001', sideTwoAlly.realName)
+check('results local team 2: team 1 is Enemy_',
+      sideTwoEnemy.realName == 'Enemy_001', sideTwoEnemy.realName)
+check('results and shared id path agree on the label',
+      mod.ANONYMISER.displayForID(9201, 'SideTwoAlly', team=2)
+      == sideTwoAlly.realName,
+      (mod.ANONYMISER.displayForID(9201, 'SideTwoAlly', team=2),
+       sideTwoAlly.realName))
+mod.IDENTITY._localTeam = 1
+mod.CONFIG._values['namePrefix'] = 'Player_'
 
 print()
 print('=== scope.battleResults=false disables the hook ===')

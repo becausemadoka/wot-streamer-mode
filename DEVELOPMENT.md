@@ -80,19 +80,19 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 
 | 文件 | 项数 | 验证什么 |
 |---|---|---|
-| `test_mod.py` | 31 | 对真实类形状的钩子假设（主回归） |
+| `test_mod.py` | 35 | 对真实类形状的钩子假设（主回归） |
 | `test_real_client.py` | 13 | 加载**真实客户端类**（fixture）并跑钩子 |
-| `test_identity.py` | 13 | 自己 / 好友 / 军团 / 组队 的身份判定 |
+| `test_identity.py` | 17 | 自己 / 好友 / 军团 / 组队 / 本地队伍 |
 | `test_bots.py` | 18 | 机器人前缀处理 |
 | `test_bot_numbering.py` | 12 | 每台机器人编号互不相同且稳定 |
-| `test_tab_panel.py` | 21 | TAB 全屏战绩面板 + 军团标签 |
+| `test_tab_panel.py` | 24 | TAB 全屏战绩面板 + 军团标签 |
 | `test_tab_bot_numbers.py` | 13 | TAB 与战斗内面板编号一致 |
-| `test_results.py` | 30 | 结算界面：机器人与玩家、豁免规则 |
+| `test_results.py` | 35 | 结算界面：机器人与玩家、豁免规则、队伍视角 |
 | `test_results_numbers.py` | 17 | 结算编号与战斗内一致 |
 | `test_team_badges.py` | 21 | 团队战绩奖章隐藏 |
 | `test_profile_clan.py` | 18 | 结算军团隐藏 + 资料页开关 |
 | `test_badges.py` | 43 | 奖章隐藏（战斗内 / 机器人 / 豁免 / 总开关） |
-| `test_prefix_language.py` | 34 | 友军/敌军前缀、语言回退 |
+| `test_prefix_language.py` | 42 | 友军/敌军前缀、语言回退、本地队伍视角 |
 | `test_settings.py` | 56 | 设置页注册、版本递增、回调签名兼容 |
 | `test_surface_switches.py` | 113 | 各界面开关、异常隔离与恢复 |
 | `test_review_findings.py` | 22 | 复查发现的问题回归 |
@@ -131,6 +131,16 @@ py -2.7 test_real_client.py
 
 现方案以 **`vehicleID`** 为键：整场战斗唯一且稳定。名字只做弱回退。
 `onAvatarBecomeNonPlayer` **不**重置编号（结算界面在其之后渲染），重置交给下一场的 `onAvatarBecomePlayer`。
+
+### 队伍分类
+
+arena 里的 `team` 是**原始边号 1/2**，不是友军/敌军标志：玩家在 2 队时，1 队才是敌军。所以分类统一走 `_isAllyTeam(team)`，内部以 `IDENTITY.localTeam()` 为基准：
+
+1. `BigWorld.player().team`
+2. `player.arena.vehicles[playerVehicleID]['team']`
+3. arenaDP 的玩家载具记录 / 按 `ownDBID` 匹配
+
+本地队伍在 `Identity.resolve()` 时快照一次并缓存（`onAvatarBecomeNonPlayer` 不清除），所以战后结算仍用同一基准，不会沿用上一场的阵营。TAB 的 `getAllies()/getEnemies()` 本身已相对本地玩家，因此不能把 1/2 原样传下去，要走 `_sideTeam()` 换算。
 
 ## 配置
 
@@ -177,9 +187,10 @@ py -2.7 test_real_client.py
 1. 启动后在 `game.log` 找 `[StreamerMode] init (...)`。若出现
    `... missing; not installed.`，说明该钩子点在这个客户端版本已不存在。
 2. 战斗内：友军显示 `友军_001` / `Ally_001`，敌军显示 `敌军_001` / `Enemy_001`；自己、好友、组队队友保留真名。
+   分在 2 队时也要验证一遍：2 队成员必须显示友军前缀，1 队显示敌军前缀。
 3. TAB：编号与面板一致；军团标签、奖章都隐藏。
 4. 击杀提示、小地图、战车标记、阵亡回放：同样隐藏。
-5. 结算：个人战绩与团队战绩都一致，名字与标签隐藏。
+5. 结算：个人战绩与团队战绩都一致，名字与标签隐藏；同样核对 2 队视角，标签不能沿用上一场的阵营。
 6. 右键查看某人资料：按 `showRealNamesInProfile` 显示真名。
 7. 设置菜单：分组齐全。若缺，查 `SETTINGS_VERSION`。
 

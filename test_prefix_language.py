@@ -248,6 +248,7 @@ def _reset_prefixes():
 
 _lang_box['value'] = 'en'
 _reset_prefixes()
+mod.IDENTITY._localTeam = 1
 check('en ally default', mod.CONFIG.allyPrefix() == 'Ally_',
       mod.CONFIG.allyPrefix())
 check('en enemy default', mod.CONFIG.enemyPrefix() == 'Enemy_',
@@ -316,6 +317,54 @@ check('display() reads team from PlayerInfoVO',
 check('display() reads enemy team from PlayerInfoVO',
       mod.ANONYMISER.display(enemyVO, 'EnemyVO') == 'Enemy_001',
       mod.ANONYMISER.display(enemyVO, 'EnemyVO'))
+
+print()
+print('=== team labels are relative to the local player ===')
+_lang_box['value'] = 'en'
+_reset_prefixes()
+mod.IDENTITY._localTeam = 2
+mod.ANONYMISER.reset()
+localSideAlly = mod.ANONYMISER.displayForID(9601, 'LocalSideAlly', team=2)
+localSideEnemy = mod.ANONYMISER.displayForID(9602, 'LocalSideEnemy', team=1)
+check('local team 2: raw team 2 is the ally side',
+      localSideAlly == 'Ally_001', localSideAlly)
+check('local team 2: raw team 1 is the enemy side',
+      localSideEnemy == 'Enemy_001', localSideEnemy)
+check('prefixForTeam follows the local team too',
+      mod.CONFIG.prefixForTeam(2) == 'Ally_'
+      and mod.CONFIG.prefixForTeam(1) == 'Enemy_',
+      (mod.CONFIG.prefixForTeam(2), mod.CONFIG.prefixForTeam(1)))
+
+_lang_box['value'] = 'zh'
+mod.ANONYMISER.reset()
+zhLocalAlly = mod.ANONYMISER.displayForID(9603, 'A', team=2)
+zhLocalEnemy = mod.ANONYMISER.displayForID(9604, 'B', team=1)
+check('local team 2 zh: raw team 2 uses 友军_',
+      zhLocalAlly == '友军_001', zhLocalAlly)
+check('local team 2 zh: raw team 1 uses 敌军_',
+      zhLocalEnemy == '敌军_001', zhLocalEnemy)
+
+mod.IDENTITY._localTeam = 1
+
+print()
+print('=== an early label self-heals once the local team is known ===')
+_lang_box['value'] = 'en'
+_reset_prefixes()
+mod.IDENTITY._localTeam = None
+mod.ANONYMISER.reset()
+# The arena side is known, but which side WE are on is not yet: the label falls
+# back to the generic prefix and must be re-minted later, not frozen.
+early = mod.ANONYMISER.displayForID(9701, 'Early', team=2)
+check('early label falls back to the generic prefix',
+      early == 'Player_001', early)
+mod.IDENTITY._localTeam = 2
+healed = mod.ANONYMISER.displayForID(9701, 'Early', team=2)
+check('once the local team is known the label is re-minted',
+      healed == 'Ally_001', healed)
+check('the healed label is stable afterwards',
+      mod.ANONYMISER.displayForID(9701, 'Early', team=2) == 'Ally_001',
+      mod.ANONYMISER.displayForID(9701, 'Early', team=2))
+mod.IDENTITY._localTeam = 1
 
 print()
 print('=' * 62)

@@ -193,8 +193,9 @@ class _Obj(object):
 class TabView(object):
     """Mirrors TabView: fills models from the engine arena dict."""
 
-    def __init__(self, vehicles):
+    def __init__(self, vehicles, localTeam=1):
         self._vehicles = vehicles          # {vehicleId: arenaDict}
+        self.localTeam = localTeam         # which side the local player is on
         self.viewModel = _Obj(playerList=PlayerList([], []))
 
     def _invalidatePersonalInfo(self, player):
@@ -211,7 +212,7 @@ class TabView(object):
             m = TabPlayerModel()
             m.getVehicleId = lambda vid=vid: vid
             self._invalidatePersonalInfo(m)
-            (allies if info.get('team') == 1 else enemies).append(m)
+            (allies if info.get('team') == self.localTeam else enemies).append(m)
         self.viewModel.playerList = PlayerList(allies, enemies)
 
 
@@ -258,6 +259,7 @@ mod.IDENTITY.ownDBID = 1
 mod.IDENTITY.friendDBIDs = set([2])
 mod.IDENTITY.ownClanAbbrev = 'CLAN'
 mod.IDENTITY.squadmateDBIDs = set()
+mod.IDENTITY._localTeam = 1
 mod.ANONYMISER.reset()
 mod.init()
 
@@ -377,6 +379,31 @@ teamView._invalidatePersonalInfo(teamEnemyModel)
 check('TAB: personal refresh keeps the enemy label',
       teamEnemyModel.getUserName() == 'Enemy_001',
       teamEnemyModel.getUserName())
+
+print()
+print('=== TAB: labels follow the local player when it is on team 2 ===')
+mod.IDENTITY._localTeam = 2
+mod.ANONYMISER.reset()
+sideTwoView = TabView({
+    411: {'accountDBID': 411, 'avatarSessionID': 's411', 'name': 'SideTwoAlly',
+          'fakeName': '', 'clanAbbrev': '', 'team': 2},
+    412: {'accountDBID': 412, 'avatarSessionID': 's412', 'name': 'SideTwoEnemy',
+          'fakeName': '', 'clanAbbrev': '', 'team': 1},
+}, localTeam=2)
+sideTwoView._invalidateVehiclesInfo()
+sideTwoAlly = sideTwoView.viewModel.playerList.getAllies()[0]
+sideTwoEnemy = sideTwoView.viewModel.playerList.getEnemies()[0]
+check('TAB local team 2: team 2 row uses Ally_',
+      sideTwoAlly.getUserName() == 'Ally_001',
+      sideTwoAlly.getUserName())
+check('TAB local team 2: team 1 row uses Enemy_',
+      sideTwoEnemy.getUserName() == 'Enemy_001',
+      sideTwoEnemy.getUserName())
+sideTwoView._invalidatePersonalInfo(sideTwoEnemy)
+check('TAB local team 2: refresh keeps the enemy label',
+      sideTwoEnemy.getUserName() == 'Enemy_001',
+      sideTwoEnemy.getUserName())
+mod.IDENTITY._localTeam = 1
 
 print()
 print('=== uninstall restores both paths ===')

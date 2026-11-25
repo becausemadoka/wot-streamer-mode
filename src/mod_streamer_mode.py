@@ -623,16 +623,17 @@ class Config(object):
                                 self._defaultTeamPrefix(False))
 
     def prefixForTeam(self, team):
-        """Prefix for team 1 (ally), team 2 (enemy), or the generic fallback."""
+        """Prefix for an ally, an enemy, or the generic fallback."""
         try:
             if hasattr(team, 'value'):
                 team = team.value
             team = int(team)
         except Exception:
             team = None
-        if team == 1:
+        ally = _isAllyTeam(team)
+        if ally is True:
             return self.allyPrefix()
-        if team == 2:
+        if ally is False:
             return self.enemyPrefix()
         return self.prefix()
 
@@ -719,6 +720,7 @@ class Identity(object):
         self.ownClanAbbrev = None
         self.friendDBIDs = set()
         self.squadmateDBIDs = set()
+        self._localTeam = None
         self.resolved = False
         self._tries = 0
 
@@ -763,11 +765,22 @@ class Identity(object):
         except Exception:
             pass
 
+        # Snapshot the local side here too: the battle-results screen outlives
+        # the avatar, and it must classify players against the side we fought
+        # on rather than fall back to a literal team 1.
+        localTeam = None
+        try:
+            localTeam = self._readLocalTeam()
+        except Exception:
+            pass
+
         # Assign unconditionally -- an empty result must clear the old snapshot.
         self.ownDBID = own or None
         self.ownClanAbbrev = clan or None
         self.friendDBIDs = set(friends)
         self.squadmateDBIDs = set(mates)
+        if localTeam is not None:
+            self._localTeam = localTeam
 
         self.resolved = True
         logInfo('identity: self=%r clan=%r friends=%d squadmates=%d'
@@ -819,6 +832,93 @@ class Identity(object):
                 return dbID
         except Exception:
             pass
+        return None
+
+    def localTeam(self):
+        """The local player's arena team (1 or 2), or None if unknown.
+
+        Team numbers on player and vehicle records are raw arena sides, not
+        ally/enemy flags: on side 2 the ally prefix must go to team 2.  Cache the
+        local side so every surface -- including battle results after the avatar
+        is gone -- classifies players against the same reference point.
+        """
+        team = _teamNumber(self._localTeam)
+        if team is not None:
+            return team
+        # No retry cap here on purpose: a miss is only possible before the arena
+        # is populated, and giving up for the battle would leave the rest of the
+        # labels on the generic prefix.  A hit is cached, so the arena scan runs
+        # at most once per battle in the normal case.
+        try:
+            team = self._readLocalTeam()
+        except Exception:
+            logError('local team lookup failed: %s' % traceback.format_exc())
+            team = None
+        if team is not None:
+            self._localTeam = team
+        return team
+
+    def _readLocalTeam(self):
+        player = getattr(BigWorld, 'player', None)
+        if player is not None:
+            team = _teamNumber(getattr(player, 'team', None))
+            if team is not None:
+                return team
+            vehicleID = getattr(player, 'playerVehicleID', None)
+            if not vehicleID:
+                getter = getattr(player, 'getPlayerVehicleID', None)
+                if callable(getter):
+                    try:
+                        vehicleID = getter()
+                    except Exception:
+                        vehicleID = None
+            arena = getattr(player, 'arena', None)
+            vehicles = getattr(arena, 'vehicles', None)
+            if vehicleID and vehicles:
+                try:
+                    entry = vehicles.get(vehicleID)
+                    if entry is None:
+                        entry = vehicles[vehicleID]
+                except Exception:
+                    entry = None
+                if isinstance(entry, dict):
+                    team = _teamNumber(entry.get('team'))
+                else:
+                    team = _teamOf(entry)
+                if team is not None:
+                    return team
+
+        arenaDP = _arenaDP()
+        if arenaDP is None:
+            return None
+        vehicleID = None
+        getter = getattr(arenaDP, 'getPlayerVehicleID', None)
+        if callable(getter):
+            try:
+                vehicleID = getter()
+            except Exception:
+                vehicleID = None
+        if vehicleID:
+            getter = getattr(arenaDP, 'getVehicleInfo', None)
+            if callable(getter):
+                try:
+                    team = _teamOf(getter(vehicleID))
+                except Exception:
+                    team = None
+                if team is not None:
+                    return team
+        if not self.ownDBID:
+            return None
+        try:
+            for vo in arenaDP.getVehiclesInfoIterator():
+                playerVO = getattr(vo, 'player', None)
+                if getattr(playerVO, 'accountDBID', None) == self.ownDBID:
+                    team = _teamOf(vo) or _teamOf(playerVO)
+                    if team is not None:
+                        return team
+        except Exception:
+            logError('local team arena lookup failed: %s'
+                     % traceback.format_exc())
         return None
 
     @staticmethod
@@ -1005,10 +1105,11 @@ def _isBot(playerVO):
 
 
 def _teamNumber(value):
-    """Normalise the client's team field to 1 (ally) or 2 (enemy).
+    """Normalise the client's team field to a raw arena side, 1 or 2.
 
     Some client versions expose an enum member with .value; others an int.  Any
     other value means "unknown", which falls back to the old generic prefix.
+    Whether a side is ally or enemy depends on the local player's own team.
     """
     try:
         if hasattr(value, 'value'):
@@ -1031,6 +1132,25 @@ def _teamOf(obj):
         if team is not None:
             return team
     return None
+
+
+def _isAllyTeam(team):
+    """True/False relative to the local player, or None when unknown."""
+    team = _teamNumber(team)
+    if team is None:
+        return None
+    local = IDENTITY.localTeam()
+    if local is None:
+        return None
+    return team == local
+
+
+def _sideTeam(isAlly):
+    """Translate an ally/enemy flag into the current arena's raw side."""
+    local = IDENTITY.localTeam()
+    if local is None:
+        local = 1
+    return local if isAlly else 3 - local
 
 
 class _ObjKey(object):
@@ -1091,6 +1211,10 @@ class Anonymiser(object):
         # dbID -> the original name we replaced, so the profile window can undo
         # our masking when the "show real names in profile" option is on.
         self._realNames = {}
+        # labels minted while the local team was still unknown; they fall back to
+        # the generic prefix and are re-minted once the side is known, so an
+        # early frame cannot leave a player permanently mislabelled.
+        self._pendingTeam = set()
         # dbID -> team, filled lazily from the arena.  PlayerInfoVO carries no
         # team field, so the panel path (getPlayerLabel) needs its own lookup or
         # it would fall back to the generic legacy prefix.
@@ -1241,20 +1365,30 @@ class Anonymiser(object):
 
         # bot keys are namespaced so a bot and a player can never collide
         lookup = ('bot', key) if isBot else ('player', key)
+        if self._pendingTeam and IDENTITY.localTeam() is not None:
+            for pending in list(self._pendingTeam):
+                self._index.pop(pending, None)
+            self._pendingTeam.clear()
         label = self._index.get(lookup)
         if label is None:
+            ally = _isAllyTeam(team)
             if isBot:
                 self._botNext += 1
                 label = '%s%03d' % (CONFIG.botPrefix(), self._botNext)
-            elif team == 1:
+            elif ally is True:
                 self._nextAlly += 1
                 label = '%s%03d' % (CONFIG.allyPrefix(), self._nextAlly)
-            elif team == 2:
+            elif ally is False:
                 self._nextEnemy += 1
                 label = '%s%03d' % (CONFIG.enemyPrefix(), self._nextEnemy)
             else:
                 self._next += 1
                 label = '%s%03d' % (CONFIG.prefix(), self._next)
+                if not isBot and team is not None:
+                    # We knew the side but not which side WE are on.  Do not
+                    # treat that label as final: once the local team resolves,
+                    # the entry is dropped above and minted again.
+                    self._pendingTeam.add(lookup)
             self._index[lookup] = label
         return label
 
@@ -2479,13 +2613,14 @@ def _tabTeam(tabView, playerModel):
         viewModel = getattr(tabView, 'viewModel', None)
         playerList = getattr(viewModel, 'playerList', None) if viewModel else None
         if playerList is not None:
-            for getter, candidate in (('getAllies', 1), ('getEnemies', 2)):
+            for getter, isAlly in (('getAllies', True),
+                                   ('getEnemies', False)):
                 fn = getattr(playerList, getter, None)
                 if not callable(fn):
                     continue
                 for model in (fn() or []):
                     if model is playerModel:
-                        return candidate
+                        return _sideTeam(isAlly)
     except Exception:
         pass
     try:
@@ -2511,12 +2646,13 @@ def _hookTabInvalidateVehiclesInfo(original):
             playerList = getattr(viewModel, 'playerList', None) if viewModel else None
             if playerList is None:
                 return result
-            for getter, team in (('getAllies', 1), ('getEnemies', 2)):
+            for getter, isAlly in (('getAllies', True),
+                                   ('getEnemies', False)):
                 fn = getattr(playerList, getter, None)
                 if not callable(fn):
                     continue
                 for model in (fn() or []):
-                    _anonymiseTabPlayer(model, team=team)
+                    _anonymiseTabPlayer(model, team=_sideTeam(isAlly))
         except Exception:
             logError('tab list anonymise failed: %s' % traceback.format_exc())
         return result

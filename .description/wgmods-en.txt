@@ -8,6 +8,9 @@ Allies and enemies use separate prefixes and counters (Ally_001 / Enemy_001).
 Labels stay stable for each battle. Official bots use a separate counter
 (Bot_001).
 
+Ally/enemy means YOUR side and the other side: if you spawn on team 2, team 2
+is labelled as allies and team 1 as enemies, in battle and after the battle.
+
 Covered: players panel, minimap, damage log, kill and event messages, 3D markers,
 death-cam panel, the TAB full-stats page, and both scoreboards after the battle.
 
@@ -53,7 +56,7 @@ It does NOT guarantee every identity is hidden everywhere. Exceptions:
 INSTALL
 
 Install all three files in <game>/mods/<client version>/
-(<client version> is in version.xml, in the client root):
+(<client version> is in <game>/version.xml, in the game folder):
 
   akemi.streamermode_<version>.wotmod  the mod
   aslain.modmenu_2.1.16.wotmod         the settings menu

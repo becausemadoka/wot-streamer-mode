@@ -89,19 +89,19 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 
 | File | Checks | What it verifies |
 |---|---|---|
-| `test_mod.py` | 31 | hook assumptions against real class shapes (main regression) |
+| `test_mod.py` | 35 | hook assumptions against real class shapes (main regression) |
 | `test_real_client.py` | 13 | loads **real client classes** from fixtures and runs the hooks |
-| `test_identity.py` | 13 | self / friends / clan / platoon detection |
+| `test_identity.py` | 17 | self / friends / clan / platoon / local team |
 | `test_bots.py` | 18 | bot prefix handling |
 | `test_bot_numbering.py` | 12 | each bot gets a distinct, stable number |
-| `test_tab_panel.py` | 21 | TAB full-stats panel + clan tags |
+| `test_tab_panel.py` | 24 | TAB full-stats panel + clan tags |
 | `test_tab_bot_numbers.py` | 13 | TAB and in-battle numbers agree |
-| `test_results.py` | 30 | post-battle scoreboard: bots vs players, exemptions |
+| `test_results.py` | 35 | post-battle scoreboard: bots vs players, exemptions, team side |
 | `test_results_numbers.py` | 17 | results numbering matches battle |
 | `test_team_badges.py` | 21 | team-stats badges hidden |
 | `test_profile_clan.py` | 18 | results clan hiding + profile switch |
 | `test_badges.py` | 43 | badge hiding (battle / bots / exemption / master switch) |
-| `test_prefix_language.py` | 34 | ally/enemy prefixes, language fallback |
+| `test_prefix_language.py` | 42 | ally/enemy prefixes, language fallback, local team side |
 | `test_settings.py` | 56 | settings registration, version bump, callback arity |
 | `test_surface_switches.py` | 113 | per-surface switches, failure isolation and restore |
 | `test_review_findings.py` | 22 | regressions for review findings |
@@ -147,6 +147,22 @@ The current key is **`vehicleID`**: unique and stable for the whole battle.
 Names are only a weak fallback. `onAvatarBecomeNonPlayer` deliberately does
 **not** reset the table — the results screen renders after it — so the reset
 happens at the next `onAvatarBecomePlayer` instead.
+
+### Team classification
+
+`team` in the arena data is a **raw side number (1/2)**, not an ally/enemy flag:
+when the player is on side 2, side 1 is the enemy. Every classification goes
+through `_isAllyTeam(team)`, which uses `IDENTITY.localTeam()` as the reference:
+
+1. `BigWorld.player().team`
+2. `player.arena.vehicles[playerVehicleID]['team']`
+3. the arenaDP record for our own vehicle / a match on `ownDBID`
+
+The local side is snapshotted in `Identity.resolve()` and cached (it survives
+`onAvatarBecomeNonPlayer`), so the post-battle scoreboard uses the same
+reference and never inherits the previous battle's side. `TabView.getAllies()`
+/ `getEnemies()` are already relative to the local player, so callers must go
+through `_sideTeam()` rather than passing 1/2 through unchanged.
 
 ## Configuration
 
@@ -212,9 +228,11 @@ Passing tests does not mean the mod works — the tests run offline.
    client version.
 2. In battle: allies show `Ally_001` / `友军_001`, enemies show
    `Enemy_001` / `敌军_001`; yourself, friends and platoon mates keep real names.
+   Repeat from team 2: team 2 must read as allies, team 1 as enemies.
 3. TAB: numbers match the panel; clan tags and badges hidden.
 4. Kill feed, minimap, markers, postmortem: hidden.
-5. Results: personal and team stats both match, names and tags hidden.
+5. Results: personal and team stats both match, names and tags hidden. Check the
+   team-2 view too: labels must not carry over from the other side.
 6. Right-click a player's profile: real name per `showRealNamesInProfile`.
 7. Settings menu: all groups visible. If not, check `SETTINGS_VERSION`.
 

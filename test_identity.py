@@ -87,15 +87,21 @@ OWN_ID = 7047814487
 
 
 class _Arena(object):
-    def __init__(self, ownID=None, playerVehicleID=None, vehicles=None):
+    def __init__(self, ownID=None, playerVehicleID=None, vehicles=None,
+                 team=None):
+        if vehicles is None and ownID:
+            vehicles = {11: {'accountDBID': ownID}}
+            if team is not None:
+                vehicles[11]['team'] = team
         self.vehicles = vehicles if vehicles is not None else (
             {11: {'accountDBID': ownID}} if ownID else {})
 
 
 class _Player(object):
-    def __init__(self, arena=None, playerVehicleID=None):
+    def __init__(self, arena=None, playerVehicleID=None, team=None):
         self.arena = arena
         self.playerVehicleID = playerVehicleID
+        self.team = team
 
 
 bw = types.ModuleType('BigWorld')
@@ -194,6 +200,25 @@ check('identity now resolved', mod.IDENTITY.ownDBID == OWN_ID,
       mod.IDENTITY.ownDBID)
 check('stranger still anonymised', stranger.getPlayerLabel().startswith('Player_'),
       stranger.getPlayerLabel())
+
+print()
+print('=== local team is read relative to the local player ===')
+check('local team unknown before the arena carries it',
+      mod.IDENTITY.localTeam() is None, mod.IDENTITY.localTeam())
+bw.player = _Player(arena=_Arena(ownID=OWN_ID, team=2), playerVehicleID=11,
+                    team=2)
+mod.IDENTITY.reset()
+mod.IDENTITY.resolve()
+check('local team read from the player entity', mod.IDENTITY.localTeam() == 2,
+      mod.IDENTITY.localTeam())
+mod.IDENTITY.reset()
+bw.player = _Player(arena=_Arena(ownID=OWN_ID, team=1), playerVehicleID=11)
+mod.IDENTITY.resolve()
+check('local team falls back to the arena vehicle record',
+      mod.IDENTITY.localTeam() == 1, mod.IDENTITY.localTeam())
+mod.IDENTITY.reset()
+check('resetting identity clears the cached local team',
+      mod.IDENTITY._localTeam is None, mod.IDENTITY._localTeam)
 
 print()
 print('=== friends resolved from the FRIEND tag ===')

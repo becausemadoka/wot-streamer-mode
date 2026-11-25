@@ -104,7 +104,7 @@ qx.text((pad, 336), 'The stream hides everyone but you.',
 
 # small chips
 chip_y = 426
-chips = [('Ally_001', AMBER), ('MIT', TEXT_MID), ('2.4.1', TEXT_MID)]
+chips = [('Ally_001', AMBER), ('Enemy_001', RED), ('v.2.4.1.0', TEXT_MID)]
 cx = pad
 for label, color in chips:
     w, h = text_size(qx, label, F_MONO_XS)

@@ -51,6 +51,8 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 
 旧版的 `namePrefix` 仍然兼容：如果它留空，就使用上面的队伍默认值；如果里面填了自定义值，则作为友军/敌军的共享回退，直到你在 `allyPrefix` / `enemyPrefix` 里分别设置。
 
+友军/敌军按**本地玩家所在队伍**分类，而不是写死某一方。即使你出生在 2 队，队友仍然显示友军前缀，对面显示敌军前缀；战斗中和战后结算都一致。
+
 ## 安装
 
 从 [Releases](https://github.com/becausemadoka/wot-streamer-mode/releases) 下载 **`akemi.streamermode_1.0.4.zip`**（本地构建时位于 `build/`）。里面有三个 `.wotmod` 和一个 `THIRD-PARTY-NOTICE.txt`：
@@ -147,13 +149,13 @@ _NAME_FORMAT_CREW = ':{0} {1}:'        # bots.pyc L12
 
 ```powershell
 python build.py          # 用 Python 2.7 编译并打包 .wotmod + .zip
-py -2.7 test_mod.py          # 行为测试（31 项）
+py -2.7 test_mod.py          # 行为测试（35 项）
 py -2.7 test_real_client.py  # 对客户端真实类测试（13 项）
 py -2.7 test_loader.py       # 模拟客户端 mod 加载器（9 项）
 py -2.7 test_package.py      # 包结构可被游戏加载（8 项）
 py -2.7 test_settings.py     # 设置菜单集成（56 项）
-py -2.7 test_tab_panel.py    # TAB 面板 + 军团标签（21 项）
-py -2.7 test_identity.py     # 身份识别/自己不被匿名（13 项）
+py -2.7 test_tab_panel.py    # TAB 面板 + 军团标签（24 项）
+py -2.7 test_identity.py     # 身份识别/自己不被匿名（17 项）
 py -2.7 test_bots.py         # 官方机器人前缀（18 项）
 py -2.7 test_bot_numbering.py   # 机器人编号唯一且一致（12 项）
 py -2.7 test_tab_bot_numbers.py # TAB 与面板编号一致（13 项）
@@ -161,8 +163,8 @@ py -2.7 test_results_numbers.py # 结算界面与面板编号一致（17 项）
 py -2.7 test_profile_clan.py # 结算军团隐藏 + 资料页开关（18 项）
 py -2.7 test_badges.py       # 奖章隐藏（43 项）
 py -2.7 test_team_badges.py  # 团队战绩奖章隐藏（21 项）
-py -2.7 test_results.py      # 结算界面机器人/玩家区分（30 项）
-py -2.7 test_prefix_language.py # 昵称/队伍前缀（34 项）
+py -2.7 test_results.py      # 结算界面机器人/玩家区分（35 项）
+py -2.7 test_prefix_language.py # 昵称/队伍前缀（42 项）
 py -2.7 test_surface_switches.py # 各界面开关与异常隔离（113 项）
 py -2.7 test_review_findings.py  # 复查问题回归（22 项）
 py -2.7 test_internal_artifact.py # 内部版版本锁（19 项）

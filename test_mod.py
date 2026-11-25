@@ -317,6 +317,7 @@ mod.CONFIG._values['namePrefix'] = ''
 mod.CONFIG._values['allyPrefix'] = ''
 mod.CONFIG._values['enemyPrefix'] = ''
 mod.ANONYMISER.reset()
+mod.IDENTITY._localTeam = 1
 
 teamAlly = PlayerInfoVO(accountDBID=300, avatarSessionID='s300',
                         name='TeamAlly')
@@ -366,6 +367,39 @@ check('unknown id still falls back to the generic prefix',
                    name='NoTeam').getPlayerLabel() == 'Player_001',
       PlayerInfoVO(accountDBID=312, avatarSessionID='s312',
                    name='NoTeam').getPlayerLabel())
+
+# The arena's team numbers are raw sides, not ally/enemy flags.  On side 2 the
+# prefix has to follow the local player, not the literal value 1.
+mod.IDENTITY._localTeam = 2
+mod.ANONYMISER.reset()
+sideTwoAlly = PlayerInfoVO(accountDBID=320, avatarSessionID='s320',
+                           name='SideTwoAlly')
+sideTwoAlly.team = 2
+sideTwoEnemy = PlayerInfoVO(accountDBID=321, avatarSessionID='s321',
+                            name='SideTwoEnemy')
+sideTwoEnemy.team = 1
+check('local team 2: team 2 player uses Ally_',
+      sideTwoAlly.getPlayerLabel() == 'Ally_001',
+      sideTwoAlly.getPlayerLabel())
+check('local team 2: team 1 player uses Enemy_',
+      sideTwoEnemy.getPlayerLabel() == 'Enemy_001',
+      sideTwoEnemy.getPlayerLabel())
+
+sideTwoAllyVeh = VehicleArenaInfoVO(vehicleID=32, team=2,
+                                    player=sideTwoAlly)
+sideTwoEnemyVeh = VehicleArenaInfoVO(vehicleID=33, team=1,
+                                     player=sideTwoEnemy)
+check('local team 2: markers follow the same classification',
+      sideTwoAllyVeh.getDisplayedName('SideTwoAlly').startswith('Ally_')
+      and sideTwoEnemyVeh.getDisplayedName('SideTwoEnemy').startswith('Enemy_'),
+      (sideTwoAllyVeh.getDisplayedName('SideTwoAlly'),
+       sideTwoEnemyVeh.getDisplayedName('SideTwoEnemy')))
+check('local team 2: TAB-style id lookup agrees',
+      mod.ANONYMISER.displayForID(330, 'TabAlly', team=2) == 'Ally_002'
+      and mod.ANONYMISER.displayForID(331, 'TabEnemy', team=1) == 'Enemy_002',
+      (mod.ANONYMISER.displayForID(330, 'TabAlly', team=2),
+       mod.ANONYMISER.displayForID(331, 'TabEnemy', team=1)))
+mod.IDENTITY._localTeam = 1
 
 # uninstall restores originals
 mod.fini()
