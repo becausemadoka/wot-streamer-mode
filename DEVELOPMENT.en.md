@@ -96,7 +96,7 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 | `test_bot_numbering.py` | 12 | each bot gets a distinct, stable number |
 | `test_tab_panel.py` | 24 | TAB full-stats panel + clan tags |
 | `test_tab_bot_numbers.py` | 13 | TAB and in-battle numbers agree |
-| `test_results.py` | 35 | post-battle scoreboard: bots vs players, exemptions, team side |
+| `test_results.py` | 40 | post-battle scoreboard: bots vs players, exemptions, team side |
 | `test_results_numbers.py` | 17 | results numbering matches battle |
 | `test_team_badges.py` | 21 | team-stats badges hidden |
 | `test_profile_clan.py` | 18 | results clan hiding + profile switch |
@@ -158,10 +158,13 @@ through `_isAllyTeam(team)`, which uses `IDENTITY.localTeam()` as the reference:
 2. `player.arena.vehicles[playerVehicleID]['team']`
 3. the arenaDP record for our own vehicle / a match on `ownDBID`
 
-The local side is snapshotted in `Identity.resolve()` and cached (it survives
-`onAvatarBecomeNonPlayer`), so the post-battle scoreboard uses the same
-reference and never inherits the previous battle's side. `TabView.getAllies()`
-/ `getEnemies()` are already relative to the local player, so callers must go
+The local side is snapshotted in `Identity.resolve()` and cached, but returning
+to the Garage can clear it. Each result set therefore carries its own answer:
+`PlayerNameBlock.setRecord` reads `reusable.getPersonalTeam()` into
+`_RESULTS_CONTEXT` before any name is resolved, and the results path prefers
+that value. This also keeps an older result on the side it was actually played,
+instead of inheriting the last battle's side. `TabView.getAllies()` /
+`getEnemies()` are already relative to the local player, so callers must go
 through `_sideTeam()` rather than passing 1/2 through unchanged.
 
 ## Configuration

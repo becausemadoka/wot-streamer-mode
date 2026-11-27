@@ -83,6 +83,7 @@ pf._PLAYER_FULL_NAME_FORMATS = {}
 
 for name in ('gui', 'gui.battle_control', 'gui.battle_control.arena_info',
              'gui.battle_results', 'gui.battle_results.reusable',
+             'gui.battle_results.components',
              'gui.impl', 'gui.impl.battle', 'gui.impl.battle.battle_page',
              'gui.Scaleform', 'gui.Scaleform.daapi', 'gui.Scaleform.daapi.view',
              'gui.Scaleform.daapi.view.battle',
@@ -155,6 +156,19 @@ brp = types.ModuleType('gui.battle_results.reusable.players')
 brp.PlayerInfo = BRPlayerInfo
 sys.modules['gui.battle_results.reusable.players'] = brp
 sys.modules['gui.battle_results.reusable'].players = brp
+
+
+class PlayerNameBlock(object):
+    """Mirror of components/shared.pyc: setRecord receives the reusable result."""
+
+    def setRecord(self, result, reusable):
+        self.recorded = True
+
+
+br_components = types.ModuleType('gui.battle_results.components.shared')
+br_components.PlayerNameBlock = PlayerNameBlock
+sys.modules['gui.battle_results.components.shared'] = br_components
+sys.modules['gui.battle_results.components'].shared = br_components
 
 tab_view = types.ModuleType('gui.impl.battle.battle_page.tab_view')
 tab_view.TabView = type('TabView', (object,), {})
@@ -378,6 +392,52 @@ check('results and shared id path agree on the label',
       == sideTwoAlly.realName,
       (mod.ANONYMISER.displayForID(9201, 'SideTwoAlly', team=2),
        sideTwoAlly.realName))
+mod.IDENTITY._localTeam = 1
+mod.CONFIG._values['namePrefix'] = 'Player_'
+
+print()
+print('=== results team comes from the specific battle result ===')
+
+
+class _Reusable(object):
+    """Mirror of _ReusableInfo: getPersonalTeam() is this result's local side."""
+
+    def __init__(self, team, uniqueID=0):
+        self.team = team
+        self.arenaUniqueID = uniqueID
+
+    def getPersonalTeam(self):
+        return self.team
+
+
+check('results name-block hook installed',
+      getattr(PlayerNameBlock.setRecord, '_streamerMode_hooked', False))
+
+# Returning to the Garage can clear Identity's cached side.  The result object
+# itself still knows which team the local player fought on.
+mod.CONFIG._values['namePrefix'] = ''
+mod.CONFIG._values['allyPrefix'] = ''
+mod.CONFIG._values['enemyPrefix'] = ''
+mod.IDENTITY._localTeam = None
+mod.ANONYMISER.reset()
+block = PlayerNameBlock()
+block.setRecord(None, _Reusable(2, uniqueID=111))
+garageAlly = BRPlayerInfo(dbID=9301, realName='GarageAlly', team=2)
+garageEnemy = BRPlayerInfo(dbID=9302, realName='GarageEnemy', team=1)
+check('after the Garage cleared the cache, team 2 still reads as ally',
+      garageAlly.realName == 'Ally_001', garageAlly.realName)
+check('after the Garage cleared the cache, team 1 still reads as enemy',
+      garageEnemy.realName == 'Enemy_001', garageEnemy.realName)
+
+# Opening an older result must use THAT result's side, not the previous one.
+mod.ANONYMISER.reset()
+block.setRecord(None, _Reusable(1, uniqueID=222))
+olderAlly = BRPlayerInfo(dbID=9401, realName='OlderAlly', team=1)
+olderEnemy = BRPlayerInfo(dbID=9402, realName='OlderEnemy', team=2)
+check('an older result on team 1 labels team 1 as ally',
+      olderAlly.realName == 'Ally_001', olderAlly.realName)
+check('an older result on team 1 labels team 2 as enemy',
+      olderEnemy.realName == 'Enemy_001', olderEnemy.realName)
 mod.IDENTITY._localTeam = 1
 mod.CONFIG._values['namePrefix'] = 'Player_'
 

@@ -23,6 +23,7 @@ import getpass
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 
@@ -159,6 +160,44 @@ def call(method, url, token, payload=None, data=None, content_type=None,
     return json.loads(raw.decode('utf-8')) if raw else None
 
 
+def _doh_ipv4(host):
+    """Resolve a host over HTTPS when the local DNS resolver has no A record."""
+    request = Request('https://dns.google/resolve?name=%s&type=A' % host,
+                      headers={'Accept': 'application/dns-json'})
+    with urlopen(request, timeout=15) as response:
+        payload = json.loads(response.read().decode('utf-8'))
+    for answer in payload.get('Answer', []):
+        if answer.get('type') == 1:
+            return answer.get('data')
+    return None
+
+
+def upload_call(url, token, data):
+    """Upload, retrying through DoH if uploads.github.com does not resolve."""
+    try:
+        return call('POST', url, token, data=data,
+                    content_type='application/zip')
+    except SystemExit as exc:
+        if 'getaddrinfo failed' not in str(exc):
+            raise
+        ip = _doh_ipv4('uploads.github.com')
+        if not ip:
+            raise
+        original = socket.getaddrinfo
+
+        def resolve(host, port, *args, **kwargs):
+            if host == 'uploads.github.com':
+                host = ip
+            return original(host, port, *args, **kwargs)
+
+        socket.getaddrinfo = resolve
+        try:
+            return call('POST', url, token, data=data,
+                        content_type='application/zip')
+        finally:
+            socket.getaddrinfo = original
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--repo', help='owner/name (default: origin remote)')
@@ -242,24 +281,31 @@ def main(argv=None):
 
     name = os.path.basename(asset)
     assets = call('GET', '%s/repos/%s/releases/%s/assets' % (API, repo, release['id']), token)
-    for existing in assets:
-        if existing['name'] != name:
-            continue
-        if not args.clobber:
-            raise SystemExit('asset %s already uploaded; pass --clobber to replace' % name)
-        call('DELETE', existing['url'], token)
-        print('deleted old asset %s' % name)
+    existing = [item for item in assets if item['name'] == name]
+    if existing and not args.clobber:
+        raise SystemExit('asset %s already uploaded; pass --clobber to replace' % name)
+    tempName = name + '.upload'
+    for item in assets:
+        if item['name'] == tempName:
+            call('DELETE', item['url'], token)
 
     with open(asset, 'rb') as fh:
         data = fh.read()
-    uploaded = call(
-        'POST',
+    # Upload under a temporary name first: deleting the old asset before a
+    # successful upload left the release with no download at all when DNS
+    # failed mid-way.
+    uploaded = upload_call(
         '%s/repos/%s/releases/%s/assets?name=%s' % (
-            UPLOADS, repo, release['id'], quote(name)),
+            UPLOADS, repo, release['id'], quote(tempName)),
         token,
-        data=data,
-        content_type='application/zip',
+        data,
     )
+    for item in existing:
+        call('DELETE', item['url'], token)
+        print('deleted old asset %s' % name)
+    if tempName != name:
+        uploaded = call('PATCH', uploaded['url'], token,
+                        payload={'name': name})
     print('uploaded %s (%d bytes)' % (uploaded['name'], uploaded['size']))
     print(release['html_url'])
 

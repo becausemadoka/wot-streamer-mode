@@ -87,7 +87,7 @@ foreach ($f in Get-ChildItem test_*.py) { py -2.7 $f.Name }
 | `test_bot_numbering.py` | 12 | 每台机器人编号互不相同且稳定 |
 | `test_tab_panel.py` | 24 | TAB 全屏战绩面板 + 军团标签 |
 | `test_tab_bot_numbers.py` | 13 | TAB 与战斗内面板编号一致 |
-| `test_results.py` | 35 | 结算界面：机器人与玩家、豁免规则、队伍视角 |
+| `test_results.py` | 40 | 结算界面：机器人与玩家、豁免规则、队伍视角 |
 | `test_results_numbers.py` | 17 | 结算编号与战斗内一致 |
 | `test_team_badges.py` | 21 | 团队战绩奖章隐藏 |
 | `test_profile_clan.py` | 18 | 结算军团隐藏 + 资料页开关 |
@@ -140,7 +140,7 @@ arena 里的 `team` 是**原始边号 1/2**，不是友军/敌军标志：玩家
 2. `player.arena.vehicles[playerVehicleID]['team']`
 3. arenaDP 的玩家载具记录 / 按 `ownDBID` 匹配
 
-本地队伍在 `Identity.resolve()` 时快照一次并缓存（`onAvatarBecomeNonPlayer` 不清除），所以战后结算仍用同一基准，不会沿用上一场的阵营。TAB 的 `getAllies()/getEnemies()` 本身已相对本地玩家，因此不能把 1/2 原样传下去，要走 `_sideTeam()` 换算。
+本地队伍在 `Identity.resolve()` 时快照一次并缓存。但回到车库后这个缓存可能被清空，而结算界面还会显示上一场甚至更早的战果，所以姓名块（`PlayerNameBlock.setRecord`）会先读 `reusable.getPersonalTeam()`，把**这一份战果自己的队伍**记到 `_RESULTS_CONTEXT`，结算标签优先用它。TAB 的 `getAllies()/getEnemies()` 本身已相对本地玩家，因此不能把 1/2 原样传下去，要走 `_sideTeam()` 换算。
 
 ## 配置
 

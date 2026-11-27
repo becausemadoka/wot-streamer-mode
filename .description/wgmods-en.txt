@@ -10,6 +10,8 @@ Labels stay stable for each battle. Official bots use a separate counter
 
 Ally/enemy means YOUR side and the other side: if you spawn on team 2, team 2
 is labelled as allies and team 1 as enemies, in battle and after the battle.
+Results keep the team of that specific battle, including after returning to the
+Garage or opening an older result.
 
 Covered: players panel, minimap, damage log, kill and event messages, 3D markers,
 death-cam panel, the TAB full-stats page, and both scoreboards after the battle.

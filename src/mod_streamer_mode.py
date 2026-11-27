@@ -1134,12 +1134,14 @@ def _teamOf(obj):
     return None
 
 
-def _isAllyTeam(team):
+def _isAllyTeam(team, localTeam=None):
     """True/False relative to the local player, or None when unknown."""
     team = _teamNumber(team)
     if team is None:
         return None
-    local = IDENTITY.localTeam()
+    local = _teamNumber(localTeam)
+    if local is None:
+        local = IDENTITY.localTeam()
     if local is None:
         return None
     return team == local
@@ -1330,7 +1332,7 @@ class Anonymiser(object):
         return self.labelForID(key if key else id(playerVO), isBot=False,
                                team=team)
 
-    def labelForID(self, key, isBot=False, team=None):
+    def labelForID(self, key, isBot=False, team=None, localTeam=None):
         """Same numbering, addressed by raw DBID/session id or a bot identity.
 
         The TAB panel only gives us an integer id, and it must produce the SAME
@@ -1365,13 +1367,14 @@ class Anonymiser(object):
 
         # bot keys are namespaced so a bot and a player can never collide
         lookup = ('bot', key) if isBot else ('player', key)
-        if self._pendingTeam and IDENTITY.localTeam() is not None:
+        if self._pendingTeam and (_teamNumber(localTeam) is not None
+                                  or IDENTITY.localTeam() is not None):
             for pending in list(self._pendingTeam):
                 self._index.pop(pending, None)
             self._pendingTeam.clear()
         label = self._index.get(lookup)
         if label is None:
-            ally = _isAllyTeam(team)
+            ally = _isAllyTeam(team, localTeam)
             if isBot:
                 self._botNext += 1
                 label = '%s%03d' % (CONFIG.botPrefix(), self._botNext)
@@ -1989,6 +1992,63 @@ def _resultsClanAbbrev(playerInfo):
         return None
 
 
+# The results screen outlives the battle avatar: returning to the Garage can
+# clear Identity's cached side.  Each result set carries its own answer --
+# _ReusableInfo.getPersonalTeam() reads personal.avatar.team -- so remember it
+# while the client is filling the scoreboard.
+_RESULTS_CONTEXT = {'arenaUniqueID': None, 'team': None}
+
+
+def _rememberResultsTeam(reusable):
+    """Capture the local side of the battle result currently being displayed."""
+    if reusable is None:
+        return None
+    team = None
+    getter = getattr(reusable, 'getPersonalTeam', None)
+    if callable(getter):
+        try:
+            team = _teamNumber(getter())
+        except Exception:
+            team = None
+    if team is None:
+        try:
+            avatar = getattr(getattr(reusable, 'personal', None),
+                             'avatar', None)
+            team = _teamNumber(getattr(avatar, 'team', None))
+        except Exception:
+            team = None
+    if team is None:
+        # getPlayerInfo(None) resolves the personal DBID itself.
+        getter = getattr(reusable, 'getPlayerInfo', None)
+        if callable(getter):
+            try:
+                team = _teamOf(getter(None))
+            except Exception:
+                team = None
+    if team is None:
+        return None
+    try:
+        _RESULTS_CONTEXT['arenaUniqueID'] = getattr(reusable,
+                                                    'arenaUniqueID', None)
+    except Exception:
+        _RESULTS_CONTEXT['arenaUniqueID'] = None
+    _RESULTS_CONTEXT['team'] = team
+    return team
+
+
+def _resultsLocalTeam():
+    """Local side for the result set on screen, then the battle-time cache."""
+    team = _teamNumber(_RESULTS_CONTEXT.get('team'))
+    if team is not None:
+        return team
+    return IDENTITY.localTeam()
+
+
+def _resetResultsContext():
+    _RESULTS_CONTEXT['arenaUniqueID'] = None
+    _RESULTS_CONTEXT['team'] = None
+
+
 def _resultsLabel(playerInfo, realValue, raw):
     """Anonymised label for one battle-results PlayerInfo.
 
@@ -2043,7 +2103,8 @@ def _resultsLabel(playerInfo, realValue, raw):
         ANONYMISER.rememberRealName(dbID, source)
         if CONFIG.mode() == 'blank':
             return u''
-        return ANONYMISER.labelForID(dbID, team=_teamOf(playerInfo))
+        return ANONYMISER.labelForID(dbID, team=_teamOf(playerInfo),
+                                     localTeam=_resultsLocalTeam())
     except Exception:
         # Fail closed: never hand back text we could not classify.
         logError('results label failed: %s' % traceback.format_exc())
@@ -2132,6 +2193,27 @@ def _hookResultsClanAbbrev(original):
             logError('results clan hook failed: %s' % traceback.format_exc())
             return realValue
     return clanAbbrev
+
+
+def _hookResultsNameBlockSetRecord(original):
+    """components/shared.pyc PlayerNameBlock.setRecord(self, result, reusable).
+
+    This runs immediately before setPlayerInfo() reads the name properties, and
+    it is the only results name path that still has the reusable result object.
+    Record the local side from it so labels stay right after the Garage has
+    cleared the in-battle team cache, or when an older result is opened.
+    """
+
+    def setRecord(self, *args, **kwargs):
+        reusable = kwargs.get('reusable')
+        if reusable is None and args:
+            reusable = args[-1]
+        try:
+            _rememberResultsTeam(reusable)
+        except Exception:
+            logError('results team capture failed: %s' % traceback.format_exc())
+        return original(self, *args, **kwargs)
+    return setRecord
 
 
 # ---------------------------------------------------------------------------
@@ -2272,6 +2354,10 @@ def _hookTeamStatsBadge(original):
     """
 
     def setRecord(self, result, reusable):
+        try:
+            _rememberResultsTeam(reusable)
+        except Exception:
+            pass
         originalResult = original(self, result, reusable)
         try:
             if not CONFIG.scope(KEY_SCOPE_RESULTS):
@@ -2316,6 +2402,10 @@ def _hookTeamBadgeBlock(original):
     """
 
     def setRecord(self, result, reusable):
+        try:
+            _rememberResultsTeam(reusable)
+        except Exception:
+            pass
         originalResult = original(self, result, reusable)
         try:
             if not CONFIG.scope(KEY_SCOPE_RESULTS):
@@ -2855,6 +2945,20 @@ class Installer(object):
         except Exception:
             logError('battle-results hook unavailable: %s' % traceback.format_exc())
 
+        # Every results name box goes through PlayerNameBlock.setRecord with the
+        # reusable result object, which is where the local side for THIS result
+        # can still be read (reusable.getPersonalTeam()).  The in-battle team
+        # cache may already have been cleared by the Garage by then.
+        try:
+            from gui.battle_results.components.shared import PlayerNameBlock
+            undo = patch(PlayerNameBlock, 'setRecord',
+                         _hookResultsNameBlockSetRecord)
+            if undo:
+                self._undos.append(undo)
+        except Exception:
+            logError('battle-results name-block hook unavailable: %s'
+                     % traceback.format_exc())
+
         # Single-player profile / details window: restore the real name when the
         # user opted in.  Scoped to that window only -- see the docstring for why
         # hooking lobbyContext.getPlayerFullName would be too broad.
@@ -3076,6 +3180,7 @@ def onAvatarBecomePlayer(*args, **kwargs):
     try:
         ANONYMISER.reset()
         IDENTITY.reset()
+        _resetResultsContext()
         IDENTITY.resolve()
         INSTALLER.install()
     except Exception:
@@ -3111,6 +3216,7 @@ def onAccountBecomePlayer(*args, **kwargs):
     try:
         IDENTITY.reset()
         ANONYMISER.reset()
+        _resetResultsContext()
         IDENTITY.resolve()
     except Exception:
         logError('onAccountBecomePlayer failed: %s' % traceback.format_exc())

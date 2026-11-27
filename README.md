@@ -163,7 +163,7 @@ py -2.7 test_results_numbers.py # 结算界面与面板编号一致（17 项）
 py -2.7 test_profile_clan.py # 结算军团隐藏 + 资料页开关（18 项）
 py -2.7 test_badges.py       # 奖章隐藏（43 项）
 py -2.7 test_team_badges.py  # 团队战绩奖章隐藏（21 项）
-py -2.7 test_results.py      # 结算界面机器人/玩家区分（35 项）
+py -2.7 test_results.py      # 结算界面机器人/玩家区分（40 项）
 py -2.7 test_prefix_language.py # 昵称/队伍前缀（42 项）
 py -2.7 test_surface_switches.py # 各界面开关与异常隔离（113 项）
 py -2.7 test_review_findings.py  # 复查问题回归（22 项）
